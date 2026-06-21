@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Superlab POS</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%23ed4b16%22/><text x=%2217%22 y=%2247%22 font-size=%2242%22 fill=%22white%22>S</text></svg>">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body class="app-page">
+  <div id="toast-root"></div>
+  <aside class="sidebar">
+    <a class="sidebar-brand" href="#pos"><span class="brand-mark">S<span>✦</span></span><span><strong>SUPERLAB</strong><small>Mix and Chill</small></span></a>
+    <nav id="nav">
+      <p>OPERACIÓN</p>
+      <button data-view="pos" class="active"><span>⚗</span> Punto de venta</button>
+      <button data-view="orders"><span>▤</span> Pedidos</button>
+      <button data-view="cash"><span>▣</span> Caja</button>
+      <div class="admin-nav">
+        <p>GESTIÓN</p>
+        <button data-view="dashboard"><span>◫</span> Resumen</button>
+        <button data-view="daily"><span>◷</span> Resumen diario</button>
+        <button data-view="products"><span>◇</span> Productos</button>
+        <button data-view="workers"><span>♙</span> Trabajadores</button>
+        <button data-view="reports"><span>⌁</span> Informes</button>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="avatar" id="avatar">SL</div>
+      <div><strong id="sidebar-name">Cargando…</strong><small id="sidebar-role"></small></div>
+      <button id="logout" title="Cerrar sesión">↪</button>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar">
+      <button id="mobile-menu" class="icon-button">☰</button>
+      <div><p class="eyebrow" id="page-kicker">OPERACIÓN</p><h1 id="page-title">Punto de venta</h1></div>
+      <div class="topbar-actions">
+        <span class="branch-pill"><i></i> Sucursal principal</span>
+        <span id="clock"></span>
+      </div>
+    </header>
+
+    <section id="view-pos" class="view active">
+      <div class="pos-layout">
+        <div class="catalog-panel">
+          <div class="catalog-toolbar">
+            <label class="search">⌕ <input id="product-search" placeholder="Buscar producto o referencia…"></label>
+            <div id="category-tabs" class="tabs"></div>
+          </div>
+          <div id="product-grid" class="product-grid"></div>
+        </div>
+        <aside class="cart-panel">
+          <div class="cart-head"><div><p class="eyebrow">PEDIDO ACTUAL</p><h2>Nueva orden</h2></div><button id="clear-cart" class="text-button danger">Limpiar</button></div>
+          <div id="cart-items" class="cart-items"></div>
+          <div class="cart-notes"><input id="order-notes" placeholder="＋ Agregar nota al pedido"></div>
+          <div class="cart-summary">
+            <div><span>Subtotal</span><strong id="subtotal">$ 0</strong></div>
+            <div><span>Descuento</span><label class="inline-money">$ <input id="discount" type="number" min="0" value="0"></label></div>
+            <div class="grand-total"><span>Total</span><strong id="total">$ 0</strong></div>
+            <button id="checkout" class="button primary wide">Cobrar <span>→</span></button>
+            <button id="hold-order" class="button secondary wide">Pausar pedido</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="view-orders" class="view content-view">
+      <div class="section-toolbar"><div><h2>Historial de pedidos</h2><p>Consulta ventas y vuelve a imprimir recibos.</p></div><button class="button secondary" data-refresh="orders">Actualizar</button></div>
+      <div class="table-card"><table><thead><tr><th>Pedido</th><th>Fecha</th><th>Cajero</th><th>Estado</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody id="orders-table"></tbody></table></div>
+    </section>
+
+    <section id="view-cash" class="view content-view">
+      <div class="section-toolbar"><div><h2>Control de caja</h2><p>Apertura y cierre con diferencia registrada.</p></div><span id="cash-status" class="status-badge"></span></div>
+      <div id="cash-content"></div>
+    </section>
+
+    <section id="view-dashboard" class="view content-view">
+      <div class="section-toolbar"><div><h2>Resumen del laboratorio</h2><p>La operación completa en una sola mirada.</p></div><span class="date-chip">Datos acumulados</span></div>
+      <div id="kpi-grid" class="kpi-grid"></div>
+      <div class="dashboard-grid">
+        <article class="panel chart-panel"><div class="panel-head"><div><h3>Ventas en el tiempo</h3><p>Ingresos por día</p></div></div><canvas id="sales-chart"></canvas></article>
+        <article class="panel"><div class="panel-head"><div><h3>Métodos de pago</h3><p>Distribución de ingresos</p></div></div><div id="payment-list" class="metric-list"></div></article>
+        <article class="panel"><div class="panel-head"><div><h3>Productos destacados</h3><p>Mayor cantidad vendida</p></div></div><div id="top-products" class="rank-list"></div></article>
+        <article class="panel"><div class="panel-head"><div><h3>Rendimiento del equipo</h3><p>Ventas por trabajador</p></div></div><div id="worker-stats" class="metric-list"></div></article>
+      </div>
+    </section>
+
+    <section id="view-daily" class="view content-view">
+      <div class="section-toolbar"><div><h2>Resumen diario de caja</h2><p>Aperturas, cierres y ventas de cada día en horario de Bogotá.</p></div><label class="date-filter">Fecha<input id="daily-date" type="date"></label></div>
+      <div id="daily-kpis" class="kpi-grid"></div>
+      <div class="dashboard-grid daily-grid">
+        <article class="panel"><div class="panel-head"><div><h3>Métodos de pago</h3><p>Distribución del día seleccionado</p></div></div><div id="daily-payments" class="metric-list"></div></article>
+        <article class="panel"><div class="panel-head"><div><h3>Balance de caja</h3><p>Totales acumulados de aperturas y cierres</p></div></div><div id="daily-balance" class="metric-list"></div></article>
+      </div>
+      <div class="section-toolbar daily-sessions-title"><div><h2>Movimientos de caja</h2><p id="daily-session-caption"></p></div></div>
+      <div class="table-card"><table><thead><tr><th>#</th><th>Abierta</th><th>Cerrada</th><th>Responsable</th><th>Monto inicial</th><th>Ventas</th><th>Monto final</th><th>Diferencia</th><th>Estado</th></tr></thead><tbody id="daily-sessions"></tbody></table></div>
+    </section>
+
+    <section id="view-products" class="view content-view">
+      <div class="section-toolbar"><div><h2>Productos</h2><p>Los precios comienzan vacíos y solo el superusuario puede configurarlos.</p></div><button id="new-product" class="button primary">＋ Nuevo producto</button></div>
+      <div class="table-card"><table><thead><tr><th>Producto</th><th>Categoría</th><th>Código</th><th>Precio</th><th>Disponible</th><th></th></tr></thead><tbody id="products-table"></tbody></table></div>
+    </section>
+
+    <section id="view-workers" class="view content-view">
+      <div class="section-toolbar"><div><h2>Trabajadores</h2><p>Crea todos los accesos operativos que necesites.</p></div><button id="new-worker" class="button primary">＋ Nuevo trabajador</button></div>
+      <div class="table-card"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Creado</th><th>Estado</th><th></th></tr></thead><tbody id="workers-table"></tbody></table></div>
+    </section>
+
+    <section id="view-reports" class="view content-view">
+      <div class="section-toolbar"><div><h2>Informes</h2><p>Indicadores de venta, equipo y producto.</p></div><button class="button secondary" onclick="window.print()">Imprimir informe</button></div>
+      <div id="report-body"></div>
+    </section>
+  </main>
+
+  <div id="modal" class="modal" aria-hidden="true"><div class="modal-card"><button class="modal-close">×</button><div id="modal-body"></div></div></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

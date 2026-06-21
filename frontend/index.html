@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Superlab POS — Iniciar sesión</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%23ed4b16%22/><text x=%2217%22 y=%2247%22 font-size=%2242%22 fill=%22white%22>S</text></svg>">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body class="login-page">
+  <main class="login-shell">
+    <section class="login-brand">
+      <div class="brand-mark large">S<span>✦</span></div>
+      <p class="eyebrow">SUPERLAB · MIX AND CHILL</p>
+      <h1>El laboratorio donde cada venta cuenta.</h1>
+      <p>Una operación rápida, medible y deliciosa para el equipo de Superlab.</p>
+      <div class="molecule" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+    </section>
+    <section class="login-card">
+      <div>
+        <p class="eyebrow orange">ACCESO SEGURO</p>
+        <h2>Bienvenido al laboratorio</h2>
+        <p class="muted">Ingresa con tu cuenta de trabajo.</p>
+      </div>
+      <form id="login-form">
+        <label>Correo electrónico<input name="email" type="email" autocomplete="username" placeholder="nombre@superlab.co" required></label>
+        <label>Contraseña<input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required></label>
+        <button class="button primary wide" type="submit">Entrar al sistema <span>→</span></button>
+        <p id="login-error" class="form-error" role="alert"></p>
+      </form>
+      <small>Acceso exclusivo para personal autorizado · Sucursal principal</small>
+    </section>
+  </main>
+  <script>
+    document.querySelector('#login-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const button = event.currentTarget.querySelector('button');
+      const error = document.querySelector('#login-error');
+      button.disabled = true; error.textContent = '';
+      const body = Object.fromEntries(new FormData(event.currentTarget));
+      const response = await fetch('/api/auth/login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const data = await response.json();
+      if (!response.ok) { error.textContent = data.error || 'No fue posible ingresar'; button.disabled = false; return; }
+      location.href = '/app';
+    });
+  </script>
+</body>
+</html>

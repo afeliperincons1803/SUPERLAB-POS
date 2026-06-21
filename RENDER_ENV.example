@@ -1,0 +1,15 @@
+# Copia estas variables en Render:
+# Dashboard → superlab-pos → Environment → Add Environment Variable
+#
+# No subas este archivo con valores reales.
+
+DATABASE_URL=postgresql://USUARIO:CONTRASENA@HOST:5432/BASE_DE_DATOS
+SECRET_KEY=GENERA_UN_VALOR_ALEATORIO_LARGO_DE_AL_MENOS_64_CARACTERES
+SUPERADMIN_NAME=Superusuario Superlab
+SUPERADMIN_EMAIL=correo-del-superusuario@superlab.co
+SUPERADMIN_PASSWORD=CAMBIA_ESTA_CONTRASENA_POR_UNA_SEGURA
+STORE_NAME=Superlab — Mix and Chill
+STORE_TIMEZONE=America/Bogota
+TZ=America/Bogota
+SESSION_COOKIE_SECURE=True
+PYTHON_VERSION=3.13.5

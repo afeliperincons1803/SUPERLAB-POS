@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: superlab-pos
+    runtime: python
+    plan: free
+    region: ohio
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn --chdir backend run:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: SUPERADMIN_NAME
+        value: Superusuario Superlab
+      - key: SUPERADMIN_EMAIL
+        sync: false
+      - key: SUPERADMIN_PASSWORD
+        sync: false
+      - key: STORE_NAME
+        value: Superlab — Mix and Chill
+      - key: STORE_TIMEZONE
+        value: America/Bogota
+      - key: TZ
+        value: America/Bogota
+      - key: SESSION_COOKIE_SECURE
+        value: "True"
