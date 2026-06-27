@@ -3,6 +3,22 @@ const $ = (selector, root=document) => root.querySelector(selector);
 const $$ = (selector, root=document) => [...root.querySelectorAll(selector)];
 const fmt = value => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(Number(value || 0)).replace('COP','$');
 const dateFmt = value => new Intl.DateTimeFormat('es-CO',{dateStyle:'medium',timeStyle:'short',timeZone:'America/Bogota'}).format(new Date(value));
+const FORMULAS_LAB = [
+  {code:'formula_1', name:'Fórmula 1 — 2 toppings + 1 salsa', price:3000},
+  {code:'formula_2', name:'Fórmula 2 — 3 toppings + 2 salsas', price:5000},
+  {code:'formula_3', name:'Fórmula 3 — 4 toppings + 2 salsas', price:7000},
+  {code:'formula_x', name:'Fórmula X — 5 toppings premium + 3 salsas + booster 8 ml', price:10000},
+];
+const FORMULA_EXTRAS = {
+  formula_1:{toppings:2,sauces:1,boosters:0},
+  formula_2:{toppings:3,sauces:2,boosters:0},
+  formula_3:{toppings:4,sauces:2,boosters:0},
+  formula_x:{toppings:5,sauces:3,boosters:1},
+};
+const BOOSTERS_LAB = [
+  {code:'booster_8', name:'Booster 8 ml', price:3000},
+  {code:'booster_20', name:'Booster 20 ml', price:5000},
+];
 
 async function api(path, options={}) {
   const response = await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});
@@ -81,10 +97,53 @@ function renderProducts() {
 }
 function addProduct(id) {
   const product=state.products.find(x=>x.id===id); if(!product||product.price===null)return;
-  const current=state.cart.find(x=>x.product_id===id);
-  if(current)current.quantity++;else state.cart.push({product_id:id,name:product.name,price:product.price,quantity:1,toppings:[]});
+  if(product.customizable)return showProductCustomizer(product);
+  addCartLine({product_id:id,name:product.name,price:product.price,quantity:1,toppings:[],modifiers:[]});
+}
+function addCartLine(line) {
+  const key=line.key||`${line.product_id}|${line.price}|${(line.toppings||[]).join('~')}|${(line.modifiers||[]).map(x=>x.name).join('~')}`;
+  const current=state.cart.find(x=>x.key===key);
+  if(current)current.quantity+=line.quantity||1;else state.cart.push({...line,key});
   renderCart();
 }
+function toppingsByGroup(group){return state.toppings.filter(x=>x.group===group&&x.available).map(x=>x.name)}
+function customizationSchema(product) {
+  const sku=String(product.sku||'');
+  const fruits=toppingsByGroup('Frutas'), sauces=toppingsByGroup('Salsas'), sweets=[...toppingsByGroup('Dulces'),...toppingsByGroup('Crunch'),...toppingsByGroup('Perlas')], salts=toppingsByGroup('Sales');
+  const schemas={
+    '001':[{title:'Elige 3 toppings',type:'multi',max:3,min:3,options:sweets},{title:'Elige 1 salsa',type:'single',min:1,options:sauces},{title:'Elige 1 paleta',type:'single',min:1,options:toppingsByGroup('Paletas')}],
+    '002':[{title:'Elige 2 siropes',type:'multi',max:2,min:2,options:toppingsByGroup('Siropes')},{title:'Toque final',type:'single',min:1,options:['Leche Condensada']}],
+    '003':[{title:'Elige el sabor del smoothie',type:'single',min:1,options:toppingsByGroup('Sabores smoothie')}],
+    '004':[{title:'Elige 5 frutas',type:'multi',max:5,min:5,options:fruits},{title:'Base cremosa',type:'single',min:1,options:['Yogur','Crema de Leche']},{title:'Chamoy',type:'single',min:1,options:['Chamoy']},{title:'Sales',type:'single',min:1,options:salts}],
+    '005':[{title:'Elige 4 frutas',type:'multi',max:4,min:4,options:fruits},{title:'Base cremosa',type:'single',min:1,options:['Yogur','Crema de Leche']},{title:'Chamoy',type:'single',min:1,options:['Chamoy']},{title:'Sales',type:'single',min:1,options:salts}],
+    '006':[{title:'Tipo de Lab Roll',type:'single',min:1,options:['Dulce','Salado']},{title:'Proteína o proyecto',type:'single',min:1,options:toppingsByGroup('Proteínas')},{title:'Toppings del roll',type:'multi',max:3,min:0,options:[...fruits,...sweets]}],
+    '011':[{title:'Sabor de temporada',type:'single',min:1,options:['Fresa','Mango','Maracuyá','Cereza','Uva','Limón']}],
+    '012':[{title:'Preparación',type:'single',min:1,options:['Clásica','Mango biche','Maracuyá','Picante']},{title:'Borde',type:'single',min:0,options:['Chamoy','Sales picantes','Miguelito']}],
+    '013':[{title:'Elige frutas enchiladas',type:'multi',max:5,min:3,options:fruits},{title:'Chamoy',type:'single',min:1,options:['Chamoy']},{title:'Sales',type:'multi',max:2,min:1,options:salts}],
+    '014':[{title:'Sabor booster',type:'single',min:1,options:toppingsByGroup('Boosters Lab')},{title:'Tamaño',type:'paid',min:1,options:BOOSTERS_LAB}],
+  };
+  return schemas[sku]||[{title:'Elige ingredientes',type:'multi',max:5,min:0,options:[...fruits,...sweets,...sauces]}];
+}
+function showProductCustomizer(product) {
+  const schema=customizationSchema(product);
+  const allowFormula=!['014'].includes(String(product.sku||''))&&product.category!=='Adiciones Lab';
+  openModal(`<div class="customizer"><p class="eyebrow orange">CREA TU EXPERIMENTO</p><h2>${escapeHtml(product.name)}</h2><p class="muted">${escapeHtml(product.description||'')}</p><div class="custom-total"><span>Base ${fmt(product.price)}</span><strong id="custom-total">${fmt(product.price)}</strong></div><form id="custom-form">${schema.map((section,i)=>customSection(section,i)).join('')}${allowFormula?`<section class="custom-step"><h3>Potencia tu experimento <small>opcional · se suma a lo incluido</small></h3><div class="choice-grid formulas"><label class="choice-pill"><input type="radio" name="formula" value="" checked><span>Sin fórmula<br><small>+ ${fmt(0)}</small></span></label>${FORMULAS_LAB.map(x=>`<label class="choice-pill paid"><input type="radio" name="formula" value="${escapeAttr(x.code)}" data-label="${escapeAttr(x.name)}" data-price="${x.price}"><span>${escapeHtml(x.name)}<br><small>+ ${fmt(x.price)}</small></span></label>`).join('')}</div></section><div id="formula-extras"></div><section class="custom-step"><h3>Booster Lab <small>opcional y adicional</small></h3><div class="choice-grid">${BOOSTERS_LAB.map(x=>`<label class="choice-pill paid"><input type="checkbox" name="booster" value="${escapeAttr(x.code)}" data-label="${escapeAttr(x.name)}" data-price="${x.price}"><span>${escapeHtml(x.name)}<br><small>+ ${fmt(x.price)}</small></span></label>`).join('')}</div></section>`:''}<label class="custom-note">Nota para preparación<input name="note" placeholder="Ej. sin picante, más hielo, separar salsa…"></label><div class="form-actions"><button type="button" class="button secondary" onclick="document.querySelector('.modal-close').click()">Cancelar</button><button class="button primary">Agregar al pedido</button></div></form></div>`);
+  const updateTotal=()=>{$('#custom-total').textContent=fmt(product.price+selectedModifiers().reduce((s,x)=>s+x.price,0))};
+  const selectedModifiers=()=>$$('#custom-form [data-price]:checked').map(x=>({code:x.value,name:x.dataset.label||x.value,price:Number(x.dataset.price||0)})).filter(x=>x.code||x.name);
+  const renderFormulaExtras=()=>{
+    const code=$('[name="formula"]:checked')?.value||'',config=FORMULA_EXTRAS[code],target=$('#formula-extras');
+    if(!target)return;
+    if(!config){target.innerHTML='';return}
+    const toppingOptions=[...toppingsByGroup('Frutas'),...toppingsByGroup('Dulces'),...toppingsByGroup('Crunch'),...toppingsByGroup('Perlas')];
+    target.innerHTML=`<div class="formula-extra-head"><strong>Adiciones de la fórmula</strong><small>Estas elecciones son extra y no reemplazan las incluidas en el producto.</small></div>${extraChoiceSection('Toppings extra','formula-extra-topping',config.toppings,toppingOptions)}${extraChoiceSection('Salsas extra','formula-extra-sauce',config.sauces,toppingsByGroup('Salsas'))}${config.boosters?extraChoiceSection('Booster 8 ml incluido','formula-extra-booster',config.boosters,toppingsByGroup('Boosters Lab')):''}`;
+    $$('#formula-extras input').forEach(x=>x.onchange=()=>enforceLimits(x));
+  };
+  $$('#custom-form input').forEach(x=>x.onchange=()=>{enforceLimits(x);if(x.name==='formula')renderFormulaExtras();updateTotal()});
+  $('#custom-form').onsubmit=e=>{e.preventDefault();const selected=[],missing=[];schema.forEach((section,i)=>{const picked=$$(`[name="step-${i}"]:checked`).map(x=>x.value);if((section.min||0)>picked.length)missing.push(section.title);picked.forEach(x=>selected.push(`${section.title}: ${x}`))});const formulaCode=$('[name="formula"]:checked')?.value||'',formulaConfig=FORMULA_EXTRAS[formulaCode];if(formulaConfig){[['formula-extra-topping','Toppings extra',formulaConfig.toppings],['formula-extra-sauce','Salsas extra',formulaConfig.sauces],['formula-extra-booster','Booster incluido',formulaConfig.boosters]].forEach(([name,title,required])=>{if(!required)return;const picked=$$(`[name="${name}"]:checked`).map(x=>x.value);if(picked.length!==required)missing.push(`${title} (${required})`);else selected.push(`${title}: ${picked.join(', ')}`)})}if(missing.length){toast(`Falta completar: ${missing.join(', ')}`,'error');return}const note=new FormData(e.currentTarget).get('note');if(note)selected.push(`Nota: ${note}`);const modifiers=selectedModifiers();const finalPrice=product.price+modifiers.reduce((s,x)=>s+x.price,0);addCartLine({product_id:product.id,name:product.name,price:finalPrice,quantity:1,toppings:selected,modifiers});closeModal();toast('Experimento agregado')};
+}
+function customSection(section,index){return `<section class="custom-step" data-step="${index}" data-max="${section.max||1}"><h3>${escapeHtml(section.title)} ${section.max?`<small>máx. ${section.max}</small>`:''}</h3><div class="choice-grid">${section.options.map(opt=>{const value=typeof opt==='string'?opt:opt.name,price=typeof opt==='string'?0:opt.price;return `<label class="choice-pill ${price?'paid':''}"><input type="${section.type==='single'||section.type==='paid'?'radio':'checkbox'}" name="step-${index}" value="${escapeAttr(value)}" ${price?`data-price="${price}"`:''}><span>${escapeHtml(value)}${price?`<br><small>+ ${fmt(price)}</small>`:''}</span></label>`}).join('')}</div></section>`}
+function extraChoiceSection(title,name,max,options){return `<section class="custom-step formula-extra-step" data-max="${max}"><h3>${escapeHtml(title)} <small>elige ${max}</small></h3><div class="choice-grid">${options.map(value=>`<label class="choice-pill"><input type="checkbox" name="${escapeAttr(name)}" value="${escapeAttr(value)}"><span>${escapeHtml(value)}</span></label>`).join('')}</div></section>`}
+function enforceLimits(input){const step=input.closest('.custom-step');if(!step||input.type!=='checkbox')return;const max=Number(step.dataset.max||0);if(!max)return;const checked=$$('input:checked',step);if(checked.length>max){input.checked=false;toast(`Máximo ${max} opciones en este paso`,'error')}}
 function renderCart() {
   const subtotal=state.cart.reduce((sum,x)=>sum+x.price*x.quantity,0),discount=Math.min(Number($('#discount')?.value||0),subtotal),total=subtotal-discount;
   $('#cart-items').innerHTML=state.cart.length?state.cart.map((x,i)=>`<div class="cart-line"><div><strong>${escapeHtml(x.name)}</strong>${x.toppings.length?`<small>${x.toppings.join(', ')}</small>`:''}<div class="qty-control"><button data-action="minus" data-index="${i}">−</button><span>${x.quantity}</span><button data-action="plus" data-index="${i}">＋</button><button data-action="remove" data-index="${i}">×</button></div></div><span class="cart-line-price">${fmt(x.price*x.quantity)}</span></div>`).join(''):`<div class="empty-cart"><span>🧪</span><h3>El experimento está vacío</h3><p>Selecciona productos para comenzar una nueva mezcla.</p></div>`;
@@ -104,7 +163,7 @@ function showCheckout() {
 }
 async function submitOrder(status,payment='cash',received=null,paymentParts={}) {
   try{
-    const payload={status,payment_method:payment,received,...paymentParts,discount:Number($('#discount').value||0),notes:$('#order-notes').value,items:state.cart.map(x=>({product_id:x.product_id,quantity:x.quantity,toppings:x.toppings}))};
+    const payload={status,payment_method:payment,received,...paymentParts,discount:Number($('#discount').value||0),notes:$('#order-notes').value,items:state.cart.map(x=>({product_id:x.product_id,quantity:x.quantity,toppings:x.toppings,modifiers:x.modifiers||[]}))};
     const {order}=await api('/api/orders',{method:'POST',body:JSON.stringify(payload)});
     state.cart=[];$('#discount').value=0;$('#order-notes').value='';renderCart();closeModal();toast(status==='paid'?'Venta registrada':'Pedido pausado');
     if(status==='paid')showReceipt(order);
