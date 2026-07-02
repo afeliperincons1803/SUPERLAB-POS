@@ -7,7 +7,7 @@ services:
     buildCommand: pip install -r backend/requirements.txt
     startCommand: gunicorn --chdir backend run:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     healthCheckPath: /health
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.5
