@@ -6,7 +6,7 @@ import pytest
 os.environ["TABLET_USER_EMAIL"] = "tablet-test@superlab.local"
 os.environ["TABLET_USER_PASSWORD"] = "TabletTestPassword2026!"
 
-from app import create_app
+from app import create_app, normalize_database_url
 
 
 @pytest.fixture()
@@ -52,6 +52,31 @@ def test_login_and_seeded_catalog(client):
     assert {product["sku"]: product["price"] for product in products}["017"] == 22000
     assert {product["sku"]: product["name"] for product in products}["018"] == "Boosters Lab 20oz"
     assert {product["sku"]: product["price"] for product in products}["018"] == 5000
+
+
+def test_database_health_and_admin_diagnostics(client):
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.get_json()["database"] == {
+        "connected": True,
+        "engine": "sqlite",
+        "provider": "sqlite",
+    }
+    login(client)
+    status = client.get("/api/system/database")
+    assert status.status_code == 200
+    data = status.get_json()
+    assert data["connected"] is True
+    assert data["persistent"] is False
+    assert data["counts"]["products"] == 18
+
+
+def test_supabase_url_is_normalized_with_psycopg_and_ssl():
+    result = normalize_database_url(
+        "postgres://postgres.project:password@aws-0-region.pooler.supabase.com:5432/postgres"
+    )
+    assert result.startswith("postgresql+psycopg2://")
+    assert "sslmode=require" in result
 
 
 def test_superadmin_is_immutable(client):

@@ -27,6 +27,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, scoped_session, sessionmaker
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.engine import make_url
 from werkzeug.security import check_password_hash, generate_password_hash
 
 
@@ -159,6 +160,47 @@ def money(value) -> int | None:
     return None if value is None else int(value)
 
 
+def normalize_database_url(raw_url):
+    value = str(raw_url or "").strip().strip("\"'")
+    if value.startswith("postgres://"):
+        value = "postgresql+psycopg2://" + value.removeprefix("postgres://")
+    elif value.startswith("postgresql://"):
+        value = "postgresql+psycopg2://" + value.removeprefix("postgresql://")
+    if not value.startswith("postgresql"):
+        return value
+    url = make_url(value)
+    query = dict(url.query)
+    host = (url.host or "").lower()
+    if "sslmode" not in query and ("supabase" in host or os.getenv("DATABASE_SSLMODE")):
+        query["sslmode"] = os.getenv("DATABASE_SSLMODE", "require")
+    return url.set(query=query).render_as_string(hide_password=False)
+
+
+def database_provider(engine):
+    host = (engine.url.host or "").lower()
+    if "supabase" in host:
+        return "supabase"
+    return "sqlite" if engine.dialect.name == "sqlite" else "postgresql"
+
+
+def initialize_database(engine, Session):
+    lock_connection = None
+    try:
+        if engine.dialect.name == "postgresql":
+            lock_connection = engine.connect()
+            lock_connection.execute(text("SELECT pg_advisory_lock(:key)"), {"key": 824673921})
+        Base.metadata.create_all(engine)
+        upgrade_schema(engine)
+        with Session() as db:
+            seed(db)
+    finally:
+        if lock_connection is not None:
+            try:
+                lock_connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": 824673921})
+            finally:
+                lock_connection.close()
+
+
 def create_app(test_config=None):
     app = Flask(__name__, static_folder=None)
     app.config.update(
@@ -171,19 +213,25 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     db_url = app.config.get("DATABASE_URL") or os.getenv("DATABASE_URL", "sqlite:///instance/superlab.db")
+    db_url = normalize_database_url(db_url)
+    require_postgres = (
+        os.getenv("DATABASE_REQUIRE_POSTGRES", "False").lower() == "true"
+        or os.getenv("RENDER", "False").lower() == "true"
+    )
+    if require_postgres and not db_url.startswith("postgresql"):
+        raise RuntimeError("DATABASE_URL debe ser una conexión PostgreSQL de Supabase en producción")
     if db_url.startswith("sqlite:///") and not db_url.startswith("sqlite:////") and db_url != "sqlite:///:memory:":
         db_path = ROOT / "backend" / db_url.removeprefix("sqlite:///")
         db_path.parent.mkdir(parents=True, exist_ok=True)
         db_url = f"sqlite:///{db_path.as_posix()}"
-    engine = create_engine(db_url, pool_pre_ping=True)
+    engine_options = {"pool_pre_ping": True}
+    if db_url.startswith("postgresql"):
+        engine_options.update(pool_size=3, max_overflow=2, pool_recycle=300, pool_timeout=20)
+    engine = create_engine(db_url, **engine_options)
     Session = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
     app.extensions["db_session"] = Session
     app.extensions["db_engine"] = engine
-    Base.metadata.create_all(engine)
-    upgrade_schema(engine)
-
-    with Session() as db:
-        seed(db)
+    initialize_database(engine, Session)
 
     @app.teardown_appcontext
     def cleanup(_exc=None):
@@ -213,7 +261,20 @@ def create_app(test_config=None):
 
     @app.get("/health")
     def health():
-        return jsonify(status="ok", timezone="America/Bogota")
+        try:
+            with engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+            return jsonify(
+                status="ok",
+                timezone="America/Bogota",
+                database={"connected": True, "engine": engine.dialect.name, "provider": database_provider(engine)},
+            )
+        except Exception:
+            return jsonify(
+                status="error",
+                timezone="America/Bogota",
+                database={"connected": False, "engine": engine.dialect.name},
+            ), 503
 
     @app.get("/app")
     def app_shell():
@@ -262,6 +323,22 @@ def create_app(test_config=None):
     @auth_required()
     def me(db, user):
         return jsonify(user=serialize_user(user), store=store_info())
+
+    @app.get("/api/system/database")
+    @auth_required(admin=True)
+    def database_status(db, user):
+        return jsonify(
+            connected=True,
+            engine=engine.dialect.name,
+            provider=database_provider(engine),
+            persistent=engine.dialect.name == "postgresql",
+            counts={
+                "users": db.scalar(select(func.count(User.id))) or 0,
+                "products": db.scalar(select(func.count(Product.id)).where(Product.deleted_at.is_(None))) or 0,
+                "toppings": db.scalar(select(func.count(Topping.id))) or 0,
+                "orders": db.scalar(select(func.count(Order.id))) or 0,
+            },
+        )
 
     @app.get("/api/catalog")
     @auth_required()

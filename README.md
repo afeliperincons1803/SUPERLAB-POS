@@ -58,7 +58,7 @@ El archivo `render.yaml` configura un Web Service Python con:
 
 En el Blueprint de Render se deben completar manualmente:
 
-- `DATABASE_URL`: conexión PostgreSQL/Supabase.
+- `DATABASE_URL`: copia desde Supabase → **Connect → Session pooler**. Para Render debe usar el host `pooler.supabase.com` y puerto `5432`, no la URL HTTPS del proyecto.
 - `SUPERADMIN_EMAIL`.
 - `SUPERADMIN_PASSWORD`.
 - `TABLET_USER_PASSWORD`.
@@ -66,6 +66,8 @@ En el Blueprint de Render se deben completar manualmente:
 La cuenta de tablet se configura con `TABLET_USER_EMAIL` y `TABLET_USER_PASSWORD`. En producción debe usarse la URL `https://TU-SERVICIO.onrender.com/tablet`; el dictado por voz requiere HTTPS y permiso de micrófono en Chrome o Edge.
 
 `SECRET_KEY` es generada automáticamente por Render.
+
+El servicio exige PostgreSQL en producción mediante `DATABASE_REQUIRE_POSTGRES=True`, fuerza SSL y ejecuta las migraciones y la carga del catálogo al iniciar. El endpoint `/health` devuelve `database.connected: true` solamente cuando Supabase responde. El superusuario también puede consultar `/api/system/database` para verificar proveedor y conteos sin exponer credenciales.
 
 El runtime está fijado en Python `3.13.5` mediante `.python-version` y `render.yaml`, evitando que un cambio del runtime predeterminado de Render rompa el despliegue.
 
