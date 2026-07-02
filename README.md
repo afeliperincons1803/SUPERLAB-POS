@@ -13,6 +13,7 @@ Sistema de punto de venta para **Superlab — Mix and Chill**, diseñado para un
 - Trabajadores ilimitados para la única sede: **Sucursal principal**.
 - Interfaz responsiva y recibo térmico imprimible.
 - Todas las fechas, horas, recibos y movimientos de caja se presentan en `America/Bogota` (UTC−5).
+- Pantalla de autoservicio en `/tablet`, con cuenta independiente, personalización guiada, dictado por voz y envío directo de comandas al trabajador.
 
 ## Ejecución local
 
@@ -24,6 +25,8 @@ python run.py
 ```
 
 Abre `http://127.0.0.1:5000`.
+
+La tablet se abre en `http://127.0.0.1:5000/tablet`.
 
 Para la primera revisión local, si no se define otra cuenta mediante variables de entorno:
 
@@ -58,6 +61,9 @@ En el Blueprint de Render se deben completar manualmente:
 - `DATABASE_URL`: conexión PostgreSQL/Supabase.
 - `SUPERADMIN_EMAIL`.
 - `SUPERADMIN_PASSWORD`.
+- `TABLET_USER_PASSWORD`.
+
+La cuenta de tablet se configura con `TABLET_USER_EMAIL` y `TABLET_USER_PASSWORD`. En producción debe usarse la URL `https://TU-SERVICIO.onrender.com/tablet`; el dictado por voz requiere HTTPS y permiso de micrófono en Chrome o Edge.
 
 `SECRET_KEY` es generada automáticamente por Render.
 

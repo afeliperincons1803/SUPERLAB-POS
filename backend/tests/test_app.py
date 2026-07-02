@@ -3,6 +3,9 @@ import tempfile
 
 import pytest
 
+os.environ["TABLET_USER_EMAIL"] = "tablet-test@superlab.local"
+os.environ["TABLET_USER_PASSWORD"] = "TabletTestPassword2026!"
+
 from app import create_app
 
 
@@ -95,6 +98,52 @@ def test_priced_modifiers_are_added_to_order_total(client):
     order = response.get_json()["order"]
     assert order["total"] == 18000
     assert order["items"][0]["unit_price"] == 18000
+
+
+def test_formula_is_restricted_to_granizado(client):
+    login(client)
+    catalog = client.get("/api/catalog").get_json()
+    bowl = next(product for product in catalog["products"] if product["sku"] == "004")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "held",
+        "items": [{
+            "product_id": bowl["id"],
+            "quantity": 1,
+            "modifiers": [{"code": "formula_1"}],
+        }],
+    })
+    assert response.status_code == 400
+    assert "Granizado" in response.get_json()["error"]
+
+
+def test_tablet_order_reaches_worker_command_queue(client):
+    login(client)
+    catalog = client.get("/api/catalog").get_json()
+    product = next(product for product in catalog["products"] if product["sku"] == "006")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    client.post("/api/auth/logout")
+
+    assert client.post("/api/tablet/session", json={
+        "email": "tablet-test@superlab.local",
+        "password": "TabletTestPassword2026!",
+    }).status_code == 200
+    response = client.post("/api/tablet/orders", json={
+        "notes": "Cliente: Laura",
+        "items": [{"product_id": product["id"], "quantity": 1, "toppings": [], "modifiers": []}],
+    })
+    assert response.status_code == 201
+    order = response.get_json()["order"]
+    assert order["source"] == "tablet"
+    assert order["status"] == "queued"
+
+    client.post("/api/auth/logout")
+    login(client)
+    orders = client.get("/api/orders").get_json()["orders"]
+    assert any(row["id"] == order["id"] for row in orders)
+    updated = client.put(f"/api/orders/{order['id']}/status", json={"status": "preparing"})
+    assert updated.status_code == 200
+    assert updated.get_json()["order"]["status"] == "preparing"
 
 
 def test_worker_cannot_access_admin(client):

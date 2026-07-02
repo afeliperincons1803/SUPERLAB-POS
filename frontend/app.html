@@ -68,7 +68,10 @@
     </section>
 
     <section id="view-orders" class="view content-view">
-      <div class="section-toolbar"><div><h2>Historial de pedidos</h2><p>Consulta ventas y vuelve a imprimir recibos.</p></div><button class="button secondary" data-refresh="orders">Actualizar</button></div>
+      <div class="section-toolbar"><div><h2>Comandas y pedidos</h2><p>Los pedidos enviados desde la tablet aparecen aquí automáticamente.</p></div><button class="button secondary" data-refresh="orders">Actualizar</button></div>
+      <h3 class="orders-subtitle">Comandas activas de la tablet</h3>
+      <div id="command-board" class="command-board"></div>
+      <h3 class="orders-subtitle">Historial</h3>
       <div class="table-card"><table><thead><tr><th>Pedido</th><th>Fecha</th><th>Cajero</th><th>Estado</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody id="orders-table"></tbody></table></div>
     </section>
 

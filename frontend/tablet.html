@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Pide en Superlab</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/tablet.css">
+</head>
+<body class="tablet-page">
+  <main id="tablet-login" class="tablet-login">
+    <section class="tablet-login-card">
+      <span class="brand-mark large">S<span>✦</span></span>
+      <p class="eyebrow orange">ACCESO PARA TABLET</p>
+      <h1>Activa el punto de autoservicio</h1>
+      <p>Ingresa la cuenta exclusiva de esta tablet. La sesión permanecerá abierta para que los clientes puedan pedir.</p>
+      <form id="tablet-login-form">
+        <label>Correo de la tablet<input name="email" type="email" autocomplete="username" required></label>
+        <label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label>
+        <p id="tablet-login-error" class="form-error" role="alert"></p>
+        <button class="button primary wide">Ingresar al modo pedidos</button>
+      </form>
+    </section>
+  </main>
+
+  <div id="tablet-app" hidden>
+  <header class="tablet-header">
+    <div class="tablet-brand"><span class="brand-mark">S<span>✦</span></span><div><strong>SUPERLAB</strong><small>CREA TU EXPERIMENTO</small></div></div>
+    <div class="tablet-progress"><span>1. Elige</span><span>2. Personaliza</span><span>3. Confirma</span></div>
+    <div class="tablet-header-actions">
+      <button id="lock-tablet" class="tablet-lock-button" title="Cerrar la sesión de pedidos">Bloquear</button>
+      <button id="open-cart" class="tablet-cart-button">Mi pedido <strong id="cart-count">0</strong></button>
+    </div>
+  </header>
+
+  <main class="tablet-shell">
+    <section class="tablet-catalog">
+      <div class="tablet-hero">
+        <p class="eyebrow orange">LABORATORIO DE FRUTAS Y BEBIDAS</p>
+        <h1>¿Qué experimento quieres crear hoy?</h1>
+        <p>Elige un producto. Solo te mostraremos las opciones que realmente puede llevar.</p>
+      </div>
+      <div id="tablet-categories" class="tablet-tabs"></div>
+      <div id="tablet-products" class="tablet-products"><div class="tablet-loading">Preparando la carta…</div></div>
+    </section>
+
+    <aside id="tablet-cart" class="tablet-cart">
+      <div class="tablet-cart-head"><div><p class="eyebrow">TU PEDIDO</p><h2>Resumen</h2></div><button id="close-cart" aria-label="Cerrar">×</button></div>
+      <div id="tablet-cart-lines" class="tablet-cart-lines"></div>
+      <div class="tablet-customer">
+        <label>Nombre para llamar tu pedido<input id="customer-name" maxlength="40" placeholder="Escribe tu nombre"></label>
+        <label>Nota general <span class="voice-field"><input id="tablet-order-note" maxlength="180" placeholder="Ej. todo para llevar"><button type="button" class="voice-button" data-voice-target="#tablet-order-note" aria-label="Dictar nota">🎙 Hablar</button></span></label>
+      </div>
+      <div class="tablet-total"><span>Total estimado</span><strong id="tablet-total">$ 0</strong></div>
+      <button id="send-tablet-order" class="button primary wide">Enviar pedido a preparación</button>
+      <small class="tablet-payment-note">El pago se confirma con el personal de la tienda.</small>
+    </aside>
+  </main>
+  </div>
+
+  <div id="tablet-modal" class="modal" aria-hidden="true"><div class="modal-card tablet-modal-card"><button class="modal-close" aria-label="Cerrar">×</button><div id="tablet-modal-body"></div></div></div>
+  <div id="tablet-toast"></div>
+  <script src="/static/tablet.js"></script>
+</body>
+</html>

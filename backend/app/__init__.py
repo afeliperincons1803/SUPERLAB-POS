@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -20,6 +21,7 @@ from sqlalchemy import (
     create_engine,
     func,
     inspect,
+    or_,
     select,
     text,
 )
@@ -35,6 +37,7 @@ try:
 except ZoneInfoNotFoundError:
     BOGOTA = timezone(timedelta(hours=-5))
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+load_dotenv(Path(__file__).resolve().parents[1] / ".env.tablet")
 
 
 class Base(DeclarativeBase):
@@ -107,6 +110,7 @@ class Order(Base):
     cashier_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     cash_session_id: Mapped[int] = mapped_column(ForeignKey("cash_sessions.id"))
     status: Mapped[str] = mapped_column(String(20), default="paid")
+    source: Mapped[str] = mapped_column(String(20), default="pos")
     payment_method: Mapped[str] = mapped_column(String(30), default="cash")
     cash_amount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     qr_amount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
@@ -215,6 +219,10 @@ def create_app(test_config=None):
     def app_shell():
         return send_from_directory(FRONTEND, "app.html")
 
+    @app.get("/tablet")
+    def tablet_shell():
+        return send_from_directory(FRONTEND, "tablet.html")
+
     @app.get("/static/<path:path>")
     def static_files(path):
         return send_from_directory(FRONTEND / "static", path)
@@ -234,6 +242,21 @@ def create_app(test_config=None):
     def logout():
         session.clear()
         return jsonify(ok=True)
+
+    @app.post("/api/tablet/session")
+    def tablet_session():
+        data = request.get_json(silent=True) or {}
+        with Session() as db:
+            user = db.scalar(select(User).where(
+                User.role == "tablet",
+                User.active.is_(True),
+                func.lower(User.email) == str(data.get("email", "")).strip().lower(),
+            ))
+            if not user or not check_password_hash(user.password_hash, str(data.get("password", ""))):
+                return jsonify(error="Correo o contraseña de tablet incorrectos"), 401
+            session.clear()
+            session["user_id"] = user.id
+            return jsonify(user=serialize_user(user), store=store_info())
 
     @app.get("/api/me")
     @auth_required()
@@ -350,12 +373,16 @@ def create_app(test_config=None):
     @app.get("/api/cash-session")
     @auth_required()
     def get_cash_session(db, user):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
         row = db.scalar(select(CashSession).where(CashSession.status == "open").order_by(CashSession.id.desc()))
         return jsonify(cash_session=serialize_cash_session(row, db) if row else None)
 
     @app.post("/api/cash-session/open")
     @auth_required()
     def open_cash_session(db, user):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
         existing = db.scalar(select(CashSession).where(CashSession.status == "open"))
         if existing:
             return jsonify(cash_session=serialize_cash_session(existing, db))
@@ -372,6 +399,8 @@ def create_app(test_config=None):
     @app.post("/api/cash-session/close")
     @auth_required()
     def close_cash_session(db, user):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
         row = db.scalar(select(CashSession).where(CashSession.status == "open"))
         if not row:
             return jsonify(error="No hay una caja abierta"), 409
@@ -389,6 +418,8 @@ def create_app(test_config=None):
     @app.post("/api/orders")
     @auth_required()
     def create_order(db, user):
+        if user.role == "tablet":
+            return jsonify(error="La tablet debe enviar comandas desde su pantalla de pedidos"), 403
         cash = db.scalar(select(CashSession).where(CashSession.status == "open"))
         if not cash:
             return jsonify(error="Abre la caja antes de vender"), 409
@@ -403,6 +434,7 @@ def create_app(test_config=None):
             if not product or not product.available or product.price is None or quantity < 1:
                 return jsonify(error="Hay un producto no disponible, sin precio o con cantidad inválida"), 400
             try:
+                validate_modifier_eligibility(product, raw)
                 modifiers = item_modifiers(raw)
             except ValueError as exc:
                 return jsonify(error=str(exc)), 400
@@ -434,6 +466,7 @@ def create_app(test_config=None):
         order = Order(
             number=f"SL-{datetime.now():%y%m%d}-{count + 1:04d}",
             cashier_id=user.id, cash_session_id=cash.id, status=status,
+            source="pos",
             payment_method=payment, cash_amount=cash_amount, qr_amount=qr_amount, card_amount=card_amount,
             subtotal=subtotal, discount=discount, total=total,
             received=received, notes=str(data.get("notes", "")).strip(),
@@ -443,13 +476,81 @@ def create_app(test_config=None):
         db.commit()
         return jsonify(order=serialize_order(order)), 201
 
+    @app.post("/api/tablet/orders")
+    @auth_required()
+    def create_tablet_order(db, user):
+        if user.role != "tablet":
+            return jsonify(error="Este acceso es exclusivo de la tablet"), 403
+        cash = db.scalar(select(CashSession).where(CashSession.status == "open"))
+        if not cash:
+            return jsonify(error="La tienda todavía no ha abierto caja. Solicita ayuda al personal."), 409
+        data = request.get_json(silent=True) or {}
+        raw_items = data.get("items")
+        if not isinstance(raw_items, list) or not raw_items:
+            return jsonify(error="El pedido está vacío"), 400
+        items, subtotal = [], Decimal(0)
+        for raw in raw_items:
+            product = db.get(Product, int(raw.get("product_id", 0)))
+            quantity = int(raw.get("quantity", 0))
+            if not product or not product.available or product.price is None or quantity < 1:
+                return jsonify(error="Hay un producto no disponible"), 400
+            try:
+                validate_modifier_eligibility(product, raw)
+                modifiers = item_modifiers(raw)
+            except ValueError as exc:
+                return jsonify(error=str(exc)), 400
+            modifier_total = sum((price for _name, price in modifiers), Decimal(0))
+            unit_price = Decimal(product.price) + modifier_total
+            line_total = unit_price * quantity
+            subtotal += line_total
+            labels = [str(x)[:120] for x in raw.get("toppings", [])]
+            labels += [f"{name} (+{money(price):,})".replace(",", ".") for name, price in modifiers]
+            items.append(OrderItem(
+                product_id=product.id, product_name=product.name, quantity=quantity,
+                unit_price=unit_price, subtotal=line_total, toppings=", ".join(labels),
+            ))
+        count = db.scalar(select(func.count(Order.id))) or 0
+        order = Order(
+            number=f"SL-{datetime.now():%y%m%d}-{count + 1:04d}",
+            cashier_id=user.id, cash_session_id=cash.id, status="queued", source="tablet",
+            payment_method="pending", cash_amount=0, qr_amount=0, card_amount=0,
+            subtotal=subtotal, discount=0, total=subtotal, received=None,
+            notes=str(data.get("notes", "")).strip(), items=items,
+        )
+        db.add(order)
+        db.commit()
+        return jsonify(order=serialize_order(order)), 201
+
     @app.get("/api/orders")
     @auth_required()
     def orders(db, user):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
         stmt = select(Order).order_by(Order.created_at.desc()).limit(300)
         if user.role != "superadmin":
-            stmt = stmt.where(Order.cashier_id == user.id)
+            stmt = stmt.where(or_(Order.cashier_id == user.id, Order.source == "tablet"))
         return jsonify(orders=[serialize_order(x) for x in db.scalars(stmt).unique().all()])
+
+    @app.put("/api/orders/<int:order_id>/status")
+    @auth_required()
+    def update_order_status(db, user, order_id):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
+        order = db.get(Order, order_id)
+        if not order or order.source != "tablet":
+            return jsonify(error="Comanda no encontrada"), 404
+        target = str((request.get_json(silent=True) or {}).get("status", ""))
+        transitions = {
+            "queued": {"preparing"},
+            "preparing": {"ready"},
+            "ready": {"completed"},
+            "completed": set(),
+        }
+        if target not in transitions.get(order.status, set()):
+            return jsonify(error="Cambio de estado no permitido"), 409
+        order.status = target
+        db.commit()
+        return jsonify(order=serialize_order(order))
 
     @app.get("/api/reports/summary")
     @auth_required(admin=True)
@@ -627,6 +728,20 @@ def item_modifiers(raw):
     return clean
 
 
+def validate_modifier_eligibility(product, raw):
+    codes = {
+        str(modifier.get("code", "")).strip()
+        for modifier in raw.get("modifiers", [])
+        if isinstance(modifier, dict)
+    }
+    formula_codes = {"formula_1", "formula_2", "formula_3", "formula_x"}
+    booster_codes = {"booster_8", "booster_20"}
+    if codes & formula_codes and str(product.sku) != "001":
+        raise ValueError("Las fórmulas solo se pueden agregar al Granizado Lab")
+    if codes & booster_codes and str(product.sku) not in {"001", "002", "003"}:
+        raise ValueError("Las jeringas solo están disponibles para granizado, raspado y smoothie")
+
+
 def seed(db):
     if not db.scalar(select(User).where(User.role == "superadmin")):
         db.add(User(
@@ -635,6 +750,23 @@ def seed(db):
             password_hash=generate_password_hash(os.getenv("SUPERADMIN_PASSWORD", "Superlab2026!")),
             role="superadmin", active=True, immutable=True,
         ))
+
+    tablet_email = os.getenv("TABLET_USER_EMAIL", "tablet@superlab.co").lower()
+    tablet_password = os.getenv("TABLET_USER_PASSWORD")
+    tablet_user = db.scalar(select(User).where(User.role == "tablet"))
+    if not tablet_user:
+        tablet_user = User(
+            role="tablet",
+            password_hash=generate_password_hash(secrets.token_urlsafe(32)),
+            active=bool(tablet_password),
+        )
+        db.add(tablet_user)
+    tablet_user.name = "Tablet de autoservicio"
+    tablet_user.email = tablet_email
+    if tablet_password:
+        tablet_user.password_hash = generate_password_hash(tablet_password)
+        tablet_user.active = True
+    tablet_user.immutable = True
 
     category_specs = [
         ("Productos Lab", "#E8450A", "🧪"),
@@ -809,6 +941,7 @@ def serialize_topping(x):
 def serialize_order(x):
     return {
         "id": x.id, "number": x.number, "cashier": x.cashier.name, "status": x.status,
+        "source": x.source,
         "payment_method": x.payment_method, "cash_amount": money(x.cash_amount), "qr_amount": money(x.qr_amount),
         "card_amount": money(x.card_amount), "subtotal": money(x.subtotal), "discount": money(x.discount),
         "total": money(x.total), "received": money(x.received), "notes": x.notes, "created_at": bogota_iso(x.created_at),
@@ -874,6 +1007,8 @@ def upgrade_schema(engine):
     for name in ("cash_amount", "qr_amount", "card_amount"):
         if name not in order_columns:
             statements.append(f"ALTER TABLE orders ADD COLUMN {name} NUMERIC(12,0) NOT NULL DEFAULT 0")
+    if "source" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'pos'")
     if statements:
         with engine.begin() as connection:
             for statement in statements:
