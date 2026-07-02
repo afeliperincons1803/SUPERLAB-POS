@@ -4,12 +4,15 @@ const $$t=(selector,root=document)=>[...root.querySelectorAll(selector)];
 const money=value=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(Number(value||0)).replace('COP','$');
 const MAIN_SKUS=new Set(['001','002','003','004','005','006','011','012','013','015','016','017']);
 const FORMULAS=[
-  {code:'formula_1',name:'Fórmula 1 — 2 toppings + 1 salsa',price:3000,toppings:2,sauces:1,boosters:0},
-  {code:'formula_2',name:'Fórmula 2 — 3 toppings + 2 salsas',price:5000,toppings:3,sauces:2,boosters:0},
-  {code:'formula_3',name:'Fórmula 3 — 4 toppings + 2 salsas',price:7000,toppings:4,sauces:2,boosters:0},
-  {code:'formula_x',name:'Fórmula X — 5 toppings + 3 salsas + jeringa 8 ml',price:10000,toppings:5,sauces:3,boosters:1},
+  {code:'formula_1',name:'Fórmula 1 — 2 toppings + 1 salsa',price:3000,toppings:2,sauces:1,boosters:0,image:'/static/products/007.png'},
+  {code:'formula_2',name:'Fórmula 2 — 3 toppings + 2 salsas',price:5000,toppings:3,sauces:2,boosters:0,image:'/static/products/008.png'},
+  {code:'formula_3',name:'Fórmula 3 — 4 toppings + 2 salsas',price:7000,toppings:4,sauces:2,boosters:0,image:'/static/products/009.png'},
+  {code:'formula_x',name:'Fórmula X — 5 toppings + 3 salsas + jeringa 8 ml',price:10000,toppings:5,sauces:3,boosters:1,image:'/static/products/010.png'},
 ];
-const SYRINGES=[{code:'booster_8',name:'Jeringa 8 ml',price:3000},{code:'booster_20',name:'Jeringa 20 ml',price:5000}];
+const SYRINGES=[
+  {code:'booster_8',name:'Jeringa 8 ml',price:3000,image:'/static/products/014.png'},
+  {code:'booster_20',name:'Jeringa 20 ml',price:5000,image:'/static/products/018.png'},
+];
 
 async function tabletApi(path,options={}){
   const response=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json'},...options});
@@ -89,10 +92,10 @@ function choiceSection(section,index){
   return `<section class="tablet-choice-section custom-step" data-max="${section.max}"><h3><span class="tablet-step-number">${index+1}</span>${esc(section.title)} <small>${section.min===section.max?`elige ${section.max}`:`mín. ${section.min} · máx. ${section.max}`}</small></h3><div class="choice-grid">${section.options.map(x=>`<label class="choice-pill"><input type="${section.max===1?'radio':'checkbox'}" name="tablet-step-${index}" value="${esc(x)}"><span>${esc(x)}</span></label>`).join('')}</div></section>`;
 }
 function formulaSection(){
-  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>¿Quieres agregar una fórmula? <small>Solo disponible para el granizado</small></h3><p class="tablet-formulas-note">La fórmula agrega toppings y salsas adicionales. No reemplaza los 3 toppings, la salsa ni la paleta incluidos.</p><div class="choice-grid formulas"><label class="choice-pill"><input type="radio" name="tablet-formula" value="" checked><span>Sin fórmula</span></label>${FORMULAS.map(f=>`<label class="choice-pill paid"><input type="radio" name="tablet-formula" value="${f.code}" data-price="${f.price}"><span>${esc(f.name)}<small>+ ${money(f.price)}</small></span></label>`).join('')}</div></section>`;
+  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>¿Quieres agregar una fórmula? <small>Solo disponible para el granizado</small></h3><p class="tablet-formulas-note">La fórmula agrega toppings y salsas adicionales. No reemplaza los 3 toppings, la salsa ni la paleta incluidos.</p><div class="choice-grid formulas"><label class="choice-pill"><input type="radio" name="tablet-formula" value="" checked><span>Sin fórmula</span></label>${FORMULAS.map(f=>`<label class="choice-pill paid addon-choice"><input type="radio" name="tablet-formula" value="${f.code}" data-price="${f.price}"><span><img class="tablet-addon-image" src="${f.image}" alt="${esc(f.name)}"><b>${esc(f.name)}</b><small>+ ${money(f.price)}</small></span></label>`).join('')}</div></section>`;
 }
 function syringeSection(){
-  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>Jeringa de sabor <small>opcional</small></h3><div class="choice-grid"><label class="choice-pill"><input type="radio" name="tablet-syringe" value="" checked><span>Sin jeringa</span></label>${SYRINGES.map(s=>`<label class="choice-pill paid"><input type="radio" name="tablet-syringe" value="${s.code}" data-price="${s.price}"><span>${esc(s.name)}<small>+ ${money(s.price)}</small></span></label>`).join('')}</div><div id="tablet-syringe-flavor"></div></section>`;
+  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>Jeringa de sabor <small>opcional</small></h3><div class="choice-grid"><label class="choice-pill"><input type="radio" name="tablet-syringe" value="" checked><span>Sin jeringa</span></label>${SYRINGES.map(s=>`<label class="choice-pill paid addon-choice"><input type="radio" name="tablet-syringe" value="${s.code}" data-price="${s.price}"><span><img class="tablet-addon-image" src="${s.image}" alt="${esc(s.name)}"><b>${esc(s.name)}</b><small>+ ${money(s.price)}</small></span></label>`).join('')}</div><div id="tablet-syringe-flavor"></div></section>`;
 }
 function renderTabletSyringeFlavor(){
   const code=$t('[name="tablet-syringe"]:checked')?.value,target=$t('#tablet-syringe-flavor');
