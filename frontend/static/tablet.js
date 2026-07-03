@@ -2,16 +2,10 @@ const tabletState={products:[],categories:[],toppings:[],cart:[],category:'all'}
 const $t=(selector,root=document)=>root.querySelector(selector);
 const $$t=(selector,root=document)=>[...root.querySelectorAll(selector)];
 const money=value=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(Number(value||0)).replace('COP','$');
-const MAIN_SKUS=new Set(['001','002','003','004','005','006','011','012','013','015','016','017']);
-const FORMULAS=[
-  {code:'formula_1',name:'Fórmula 1 — 2 toppings + 1 salsa',price:3000,toppings:2,sauces:1,boosters:0,image:'/static/products/007.png'},
-  {code:'formula_2',name:'Fórmula 2 — 3 toppings + 2 salsas',price:5000,toppings:3,sauces:2,boosters:0,image:'/static/products/008.png'},
-  {code:'formula_3',name:'Fórmula 3 — 4 toppings + 2 salsas',price:7000,toppings:4,sauces:2,boosters:0,image:'/static/products/009.png'},
-  {code:'formula_x',name:'Fórmula X — 5 toppings + 3 salsas + jeringa 8 ml',price:10000,toppings:5,sauces:3,boosters:1,image:'/static/products/010.png'},
-];
-const SYRINGES=[
-  {code:'booster_8',name:'Jeringa 8 ml',price:3000,image:'/static/products/014.png'},
-  {code:'booster_20',name:'Jeringa 20 ml',price:5000,image:'/static/products/018.png'},
+const MAIN_SKUS=new Set(['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015','016','017']);
+const POTENCIADORES=[
+  {code:'booster_8',name:'Fórmula X 8 ml',price:3000,image:'/static/products/014.png'},
+  {code:'booster_20',name:'Fórmula X Max 20 ml',price:5000,image:'/static/products/018.png'},
 ];
 
 async function tabletApi(path,options={}){
@@ -61,56 +55,43 @@ function renderTabletProducts(){
   $$t('[data-product]').forEach(b=>b.onclick=()=>selectTabletProduct(Number(b.dataset.product)));
 }
 function baseSections(sku){
-  const fruits=group('Frutas'),sauces=group('Salsas'),sweets=[...group('Dulces'),...group('Crunch'),...group('Perlas')],salts=group('Sales');
+  const fruits=group('Frutas'),sauces=group('Salsas'),sweets=[...group('Dulces'),...group('Crunch'),...group('Perlas')];
   return ({
-    '001':[{title:'Elige los 3 toppings incluidos',max:3,min:3,options:sweets},{title:'Elige la salsa incluida',max:1,min:1,options:sauces},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
-    '002':[{title:'Elige los 2 siropes incluidos',max:2,min:2,options:group('Siropes')},{title:'Toque incluido',max:1,min:1,options:['Leche Condensada']}],
-    '003':[{title:'Elige el sabor',max:1,min:1,options:group('Sabores smoothie')}],
-    '004':[{title:'Elige 5 frutas',max:5,min:5,options:fruits},{title:'Elige la base cremosa',max:1,min:1,options:['Yogur','Crema de Leche']},{title:'Elige una sal',max:1,min:1,options:salts}],
-    '005':[{title:'Elige 4 frutas',max:4,min:4,options:fruits},{title:'Elige la base cremosa',max:1,min:1,options:['Yogur','Crema de Leche']},{title:'Elige una sal',max:1,min:1,options:salts}],
-    '011':[{title:'Elige el sabor de temporada',max:1,min:1,options:['Fresa','Mango','Maracuyá','Cereza','Uva','Limón']}],
-    '012':[{title:'Elige la preparación',max:1,min:1,options:['Clásica','Mango biche','Maracuyá','Picante']},{title:'Elige el borde',max:1,min:0,options:['Chamoy','Sales picantes','Miguelito']}],
-    '013':[{title:'Elige entre 3 y 5 frutas',max:5,min:3,options:fruits},{title:'Elige hasta 2 sales',max:2,min:1,options:salts}],
-    '017':[{title:'Elige el estilo',max:1,min:1,options:['Dulce','Salado']},{title:'Elige hasta 3 ingredientes principales',max:3,min:1,options:[...fruits,...sweets]}],
+    '001':[{title:'Elige los 2 toppings incluidos',max:2,min:2,options:sweets},{title:'Elige la salsa incluida',max:1,min:1,options:sauces},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
+    '002':[{title:'Elige los 3 toppings incluidos',max:3,min:3,options:sweets},{title:'Elige la salsa incluida',max:1,min:1,options:sauces},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
+    '003':[{title:'Elige la Fórmula Frutal',max:1,min:1,options:fruits},{title:'Elige salsa o leche condensada',max:1,min:1,options:[...sauces,'Leche Condensada']},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
+    '004':[{title:'Elige el sabor del smoothie',max:1,min:1,options:group('Sabores smoothie')},{title:'Elige 3 toppings de frutas o dulces',max:3,min:3,options:[...fruits,...sweets]},{title:'Elige 1 salsa',max:1,min:1,options:sauces}],
+    '005':[{title:'Elige la Fórmula Frutal',max:1,min:1,options:fruits}],
+    '010':[{title:'Elige 5 frutas',max:5,min:5,options:fruits},{title:'Elige la base',max:1,min:1,options:['Yogur','Crema de Leche','Chamoy']},{title:'Elige 3 toppings',max:3,min:3,options:sweets},{title:'Elige hasta 2 salsas',max:2,min:1,options:sauces}],
+    '011':[{title:'Elige 4 frutas premium',max:4,min:4,options:fruits},{title:'Elige hasta 3 toppings y gomitas',max:3,min:1,options:sweets},{title:'Elige hasta 2 salsas',max:2,min:1,options:sauces}],
+    '015':[{title:'Elige la salsa incluida',max:1,min:1,options:sauces},{title:'Elige hasta 2 toppings',max:2,min:1,options:sweets}],
+    '016':[{title:'Elige las 2 salsas incluidas',max:2,min:2,options:sauces},{title:'Elige hasta 3 toppings',max:3,min:1,options:sweets}],
+    '017':[{title:'Elige la cerveza',max:1,min:1,options:group('Cervezas')}],
   })[sku]||[];
 }
 function selectTabletProduct(id){
   const product=tabletState.products.find(p=>p.id===id),sku=String(product.sku);
   const sections=baseSections(sku);
-  if(!sections.length){addTabletLine(product,[],[]);return}
   openTabletCustomizer(product,sections);
 }
 function openTabletCustomizer(product,sections){
-  const sku=String(product.sku),formulaAllowed=sku==='001',syringeAllowed=['001','002','003'].includes(sku);
-  $t('#tablet-modal-body').innerHTML=`<p class="eyebrow orange">PERSONALIZA PASO A PASO</p><h2>${esc(product.name)}</h2><p class="muted">${esc(product.description||'')}</p><form id="tablet-custom-form">${sections.map((s,i)=>choiceSection(s,i)).join('')}${formulaAllowed?formulaSection():''}<div id="tablet-formula-extras"></div>${syringeAllowed?syringeSection():''}<label class="custom-note">Nota o extra para este producto<span class="voice-field"><input id="tablet-product-note" name="product_note" maxlength="120" placeholder="Ej. sin picante o salsa aparte"><button type="button" class="voice-button" data-voice-target="#tablet-product-note">🎙 Hablar</button></span></label><div class="form-actions"><button type="button" class="button secondary" id="cancel-tablet-custom">Cancelar</button><button class="button primary">Agregar a mi pedido</button></div></form>`;
+  $t('#tablet-modal-body').innerHTML=`<p class="eyebrow orange">PERSONALIZA PASO A PASO</p><h2>${esc(product.name)}</h2><p class="muted">${esc(product.description||'')}</p><form id="tablet-custom-form">${sections.map((s,i)=>choiceSection(s,i)).join('')}${potentiatorSection()}<label class="custom-note">Nota para este producto<span class="voice-field"><input id="tablet-product-note" name="product_note" maxlength="120" placeholder="Ej. sin picante o salsa aparte"><button type="button" class="voice-button" data-voice-target="#tablet-product-note">🎙 Hablar</button></span></label><div class="form-actions"><button type="button" class="button secondary" id="cancel-tablet-custom">Cancelar</button><button class="button primary">Agregar a mi pedido</button></div></form>`;
   $t('#tablet-modal').classList.add('open');$t('#tablet-modal').setAttribute('aria-hidden','false');
   $t('#cancel-tablet-custom').onclick=closeTabletModal;
-  $$t('#tablet-custom-form input').forEach(input=>input.onchange=()=>{enforceTabletLimit(input);if(input.name==='tablet-formula')renderTabletFormulaExtras();if(input.name==='tablet-syringe')renderTabletSyringeFlavor()});
+  $$t('#tablet-custom-form input').forEach(input=>input.onchange=()=>{enforceTabletLimit(input);if(input.name==='tablet-syringe')renderTabletSyringeFlavor()});
   $t('#tablet-custom-form').onsubmit=e=>saveTabletCustomization(e,product,sections);
 }
 function choiceSection(section,index){
   return `<section class="tablet-choice-section custom-step" data-max="${section.max}"><h3><span class="tablet-step-number">${index+1}</span>${esc(section.title)} <small>${section.min===section.max?`elige ${section.max}`:`mín. ${section.min} · máx. ${section.max}`}</small></h3><div class="choice-grid">${section.options.map(x=>`<label class="choice-pill"><input type="${section.max===1?'radio':'checkbox'}" name="tablet-step-${index}" value="${esc(x)}"><span>${esc(x)}</span></label>`).join('')}</div></section>`;
 }
-function formulaSection(){
-  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>¿Quieres agregar una fórmula? <small>Solo disponible para el granizado</small></h3><p class="tablet-formulas-note">La fórmula agrega toppings y salsas adicionales. No reemplaza los 3 toppings, la salsa ni la paleta incluidos.</p><div class="choice-grid formulas"><label class="choice-pill"><input type="radio" name="tablet-formula" value="" checked><span>Sin fórmula</span></label>${FORMULAS.map(f=>`<label class="choice-pill paid addon-choice"><input type="radio" name="tablet-formula" value="${f.code}" data-price="${f.price}"><span><img class="tablet-addon-image" src="${f.image}" alt="${esc(f.name)}"><b>${esc(f.name)}</b><small>+ ${money(f.price)}</small></span></label>`).join('')}</div></section>`;
-}
-function syringeSection(){
-  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>Jeringa de sabor <small>opcional</small></h3><div class="choice-grid"><label class="choice-pill"><input type="radio" name="tablet-syringe" value="" checked><span>Sin jeringa</span></label>${SYRINGES.map(s=>`<label class="choice-pill paid addon-choice"><input type="radio" name="tablet-syringe" value="${s.code}" data-price="${s.price}"><span><img class="tablet-addon-image" src="${s.image}" alt="${esc(s.name)}"><b>${esc(s.name)}</b><small>+ ${money(s.price)}</small></span></label>`).join('')}</div><div id="tablet-syringe-flavor"></div></section>`;
+function potentiatorSection(){
+  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>Fórmula X <small>potenciador opcional</small></h3><p class="tablet-formulas-note">Puedes agregar un toque extra de sabor a tu preparación.</p><div class="choice-grid"><label class="choice-pill"><input type="radio" name="tablet-syringe" value="" checked><span>Sin Fórmula X</span></label>${POTENCIADORES.map(s=>`<label class="choice-pill paid addon-choice"><input type="radio" name="tablet-syringe" value="${s.code}" data-price="${s.price}"><span><img class="tablet-addon-image" src="${s.image}" alt="${esc(s.name)}"><b>${esc(s.name)}</b><small>+ ${money(s.price)}</small></span></label>`).join('')}</div><div id="tablet-syringe-flavor"></div></section>`;
 }
 function renderTabletSyringeFlavor(){
   const code=$t('[name="tablet-syringe"]:checked')?.value,target=$t('#tablet-syringe-flavor');
   if(!target)return;
   if(!code){target.innerHTML='';return}
-  target.innerHTML=`<div class="formula-extra-head"><strong>Elige el sabor de la jeringa</strong></div><div class="choice-grid">${group('Boosters Lab').map(v=>`<label class="choice-pill"><input type="radio" name="tablet-syringe-flavor" value="${esc(v)}"><span>${esc(v)}</span></label>`).join('')}</div>`;
-}
-function renderTabletFormulaExtras(){
-  const code=$t('[name="tablet-formula"]:checked')?.value,formula=FORMULAS.find(f=>f.code===code),target=$t('#tablet-formula-extras');
-  if(!formula){target.innerHTML='';return}
-  const toppingOptions=[...group('Frutas'),...group('Dulces'),...group('Crunch'),...group('Perlas')];
-  const extra=[{title:`Elige ${formula.toppings} toppings extra`,name:'formula_toppings',max:formula.toppings,options:toppingOptions},{title:`Elige ${formula.sauces} salsas extra`,name:'formula_sauces',max:formula.sauces,options:group('Salsas')}];
-  if(formula.boosters)extra.push({title:'Elige la jeringa 8 ml incluida',name:'formula_booster',max:1,options:group('Boosters Lab')});
-  target.innerHTML=`<div class="formula-extra-head"><strong>Ahora elige lo que agrega tu fórmula</strong><small>Estas selecciones son adicionales.</small></div>${extra.map(x=>`<section class="custom-step formula-extra-step" data-max="${x.max}"><h3>${esc(x.title)}</h3><div class="choice-grid">${x.options.map(v=>`<label class="choice-pill"><input type="checkbox" name="${x.name}" value="${esc(v)}"><span>${esc(v)}</span></label>`).join('')}</div></section>`).join('')}`;
-  $$t('#tablet-formula-extras input').forEach(x=>x.onchange=()=>enforceTabletLimit(x));
+  target.innerHTML=`<div class="formula-extra-head"><strong>Elige el sabor de la Fórmula X</strong></div><div class="choice-grid">${group('Boosters Lab').map(v=>`<label class="choice-pill"><input type="radio" name="tablet-syringe-flavor" value="${esc(v)}"><span>${esc(v.replace(' booster',''))}</span></label>`).join('')}</div>`;
 }
 function enforceTabletLimit(input){
   const section=input.closest('[data-max]');if(!section||input.type!=='checkbox')return;
@@ -120,14 +101,8 @@ function enforceTabletLimit(input){
 function saveTabletCustomization(event,product,sections){
   event.preventDefault();const labels=[],missing=[];
   sections.forEach((section,i)=>{const selected=$$t(`[name="tablet-step-${i}"]:checked`).map(x=>x.value);if(selected.length<section.min)missing.push(section.title);if(selected.length>section.max)missing.push(section.title);if(selected.length)labels.push(`${section.title}: ${selected.join(', ')}`)});
-  const modifiers=[],formulaCode=$t('[name="tablet-formula"]:checked')?.value,formula=FORMULAS.find(f=>f.code===formulaCode);
-  if(formula){
-    const extras=[['formula_toppings','Toppings extra',formula.toppings],['formula_sauces','Salsas extra',formula.sauces],['formula_booster','Jeringa incluida',formula.boosters]];
-    extras.forEach(([name,title,count])=>{if(!count)return;const values=$$t(`[name="${name}"]:checked`).map(x=>x.value);if(values.length!==count)missing.push(`${title}: elige ${count}`);else labels.push(`${title}: ${values.join(', ')}`)});
-    modifiers.push({code:formula.code,name:formula.name,price:formula.price});
-  }
-  const syringeCode=$t('[name="tablet-syringe"]:checked')?.value,syringe=SYRINGES.find(s=>s.code===syringeCode);
-  if(syringe){const flavor=$t('[name="tablet-syringe-flavor"]:checked')?.value;if(!flavor)missing.push('Sabor de la jeringa');else labels.push(`Sabor de jeringa: ${flavor}`);modifiers.push({code:syringe.code,name:syringe.name,price:syringe.price})}
+  const modifiers=[],syringeCode=$t('[name="tablet-syringe"]:checked')?.value,syringe=POTENCIADORES.find(s=>s.code===syringeCode);
+  if(syringe){const flavor=$t('[name="tablet-syringe-flavor"]:checked')?.value;if(!flavor)missing.push('Sabor de la Fórmula X');else labels.push(`Sabor de Fórmula X: ${flavor.replace(' booster','')}`);modifiers.push({code:syringe.code,name:syringe.name,price:syringe.price})}
   const note=new FormData(event.currentTarget).get('product_note');if(note)labels.push(`Nota: ${note}`);
   if(missing.length){toastTablet(`Falta completar: ${missing.join(' · ')}`,'error');return}
   addTabletLine(product,labels,modifiers);closeTabletModal();

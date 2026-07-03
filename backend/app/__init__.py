@@ -139,20 +139,12 @@ class OrderItem(Base):
 
 
 PRICED_MODIFIERS = {
-    "Fórmula 1 — 2 toppings + 1 salsa": Decimal(3000),
-    "Fórmula 2 — 3 toppings + 2 salsas": Decimal(5000),
-    "Fórmula 3 — 4 toppings + 2 salsas": Decimal(7000),
-    "Fórmula X — 5 toppings premium + 3 salsas + booster 8 ml": Decimal(10000),
-    "Booster 8 ml": Decimal(3000),
-    "Booster 20 ml": Decimal(5000),
+    "Fórmula X 8 ml": Decimal(3000),
+    "Fórmula X Max 20 ml": Decimal(5000),
 }
 PRICED_MODIFIER_CODES = {
-    "formula_1": ("Fórmula 1 — 2 toppings + 1 salsa", Decimal(3000)),
-    "formula_2": ("Fórmula 2 — 3 toppings + 2 salsas", Decimal(5000)),
-    "formula_3": ("Fórmula 3 — 4 toppings + 2 salsas", Decimal(7000)),
-    "formula_x": ("Fórmula X — 5 toppings premium + 3 salsas + booster 8 ml", Decimal(10000)),
-    "booster_8": ("Booster 8 ml", Decimal(3000)),
-    "booster_20": ("Booster 20 ml", Decimal(5000)),
+    "booster_8": ("Fórmula X 8 ml", Decimal(3000)),
+    "booster_20": ("Fórmula X Max 20 ml", Decimal(5000)),
 }
 
 
@@ -788,18 +780,6 @@ def item_modifiers(raw):
         if name in PRICED_MODIFIERS:
             clean.append((name, PRICED_MODIFIERS[name]))
             continue
-        if name.startswith("Formula 1") or name.startswith("F?rmula 1"):
-            clean.append(PRICED_MODIFIER_CODES["formula_1"])
-            continue
-        if name.startswith("Formula 2") or name.startswith("F?rmula 2"):
-            clean.append(PRICED_MODIFIER_CODES["formula_2"])
-            continue
-        if name.startswith("Formula 3") or name.startswith("F?rmula 3"):
-            clean.append(PRICED_MODIFIER_CODES["formula_3"])
-            continue
-        if name.startswith("Formula X") or name.startswith("F?rmula X"):
-            clean.append(PRICED_MODIFIER_CODES["formula_x"])
-            continue
         if name not in PRICED_MODIFIERS:
             raise ValueError(f"Adición no válida: {name}")
     return clean
@@ -813,10 +793,10 @@ def validate_modifier_eligibility(product, raw):
     }
     formula_codes = {"formula_1", "formula_2", "formula_3", "formula_x"}
     booster_codes = {"booster_8", "booster_20"}
-    if codes & formula_codes and str(product.sku) != "001":
-        raise ValueError("Las fórmulas solo se pueden agregar al Granizado Lab")
-    if codes & booster_codes and str(product.sku) not in {"001", "002", "003"}:
-        raise ValueError("Las jeringas solo están disponibles para granizado, raspado y smoothie")
+    if codes & formula_codes:
+        raise ValueError("Las fórmulas anteriores ya no están disponibles en la carta")
+    if codes & booster_codes and str(product.sku) not in {f"{number:03d}" for number in range(1, 18)}:
+        raise ValueError("La Fórmula X solo se puede agregar a una preparación de la carta")
 
 
 def seed(db):
@@ -846,10 +826,13 @@ def seed(db):
     tablet_user.immutable = True
 
     category_specs = [
-        ("Productos Lab", "#E8450A", "🧪"),
+        ("Granizados Lab", "#E8450A", "🧪"),
         ("Bebidas Lab", "#2E6BE6", "🥤"),
-        ("Bandejas Lab", "#22C55E", "🍓"),
-        ("Adiciones Lab", "#8B5CF6", "✦"),
+        ("Experimentos", "#F97316", "⚗"),
+        ("Bowl y Bandeja", "#8B5CF6", "🥣"),
+        ("Crepas Lab", "#EA580C", "◒"),
+        ("Mini Donas", "#F59E0B", "◉"),
+        ("Adicionales", "#64748B", "✦"),
     ]
     existing_categories = {row.name: row for row in db.scalars(select(Category)).all()}
     desired_categories = {name for name, _color, _icon in category_specs}
@@ -868,7 +851,7 @@ def seed(db):
 
     topping_specs = {
         "Frutas": ["Fresa", "Mango", "Sandía", "Kiwi", "Arándanos", "Frambuesa", "Mora", "Cereza", "Piña", "Uva", "Tomate de árbol", "Melón"],
-        "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Frutos Verdes", "Sandía & Mango"],
+        "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Frutos Cítricos", "Sandía", "Mango"],
         "Siropes": ["Sirope Fresa", "Sirope Mora Azul", "Sirope Mango", "Sirope Maracuyá", "Sirope Cereza", "Sirope Uva", "Sirope Limón"],
         "Dulces": ["Gomitas Osito", "Gomitas Agrias", "Malvaviscos", "Chocolatinas", "Chispas de Colores"],
         "Crunch": ["Galleta Oreo", "Granola", "Cereal Colorido", "Coco Rallado", "Maní"],
@@ -878,6 +861,7 @@ def seed(db):
         "Paletas": ["Paleta dulce", "Paleta ácida"],
         "Proteínas": ["Pollo", "Carne", "Proyecto libre", "Dulce"],
         "Boosters Lab": ["Chocolate booster", "Licor booster", "Chamoy booster", "Leche Condensada booster", "Sirope booster"],
+        "Cervezas": ["Sol", "Coronita"],
     }
     existing_toppings = {row.name: row for row in db.scalars(select(Topping)).all()}
     for group, names in topping_specs.items():
@@ -892,36 +876,44 @@ def seed(db):
 
     db.flush()
     catalog_products = [
-        ("001", "Granizado Lab 12 oz", "Bebidas Lab", "Granizado Lab 12 oz. Incluye granizado + 3 toppings + 1 salsa + 1 paleta dulce.", 15000, True),
-        ("002", "Raspado Lab 12oz", "Bebidas Lab", "Raspado Lab 12oz. Hielo molido + 2 siropes + leche condensada.", 8000, True),
-        ("003", "Smoothie Lab 16oz", "Bebidas Lab", "Smoothie Lab 16oz. Elige frutos rojos, amarillos, verdes o sandía & mango.", 16000, True),
-        ("004", "Bowl Lab", "Productos Lab", "Bowl Lab. Elige 5 frutas de la barra + yogur o crema de leche + chamoy + sales dulces o picantes.", 17000, True),
-        ("005", "Bandeja fruti Lab", "Bandejas Lab", "Bandeja fruti Lab. Elige 4 frutas de la barra + yogur o crema de leche + chamoy + sales dulces o picantes.", 25000, True),
-        ("006", "Lab Rolls - Carne", "Productos Lab", "Lab Rolls - Carne. Roll salado con carne, vegetales y salsas.", 22000, True),
-        ("007", "Fórmula 1", "Adiciones Lab", "Adición básica para potenciar tu pedido. Nivel de sabor 1.", 3000, False),
-        ("008", "Fórmula 2", "Adiciones Lab", "Adición intermedia para llevar tu experiencia al siguiente nivel.", 5000, False),
-        ("009", "Fórmula 3", "Adiciones Lab", "Adición avanzada para los que buscan más sabor e intensidad.", 7000, False),
-        ("010", "Fórmula X", "Adiciones Lab", "La fórmula secreta. Máxima potencia, solo para los más atrevidos.", 10000, False),
-        ("011", "Sodas Italianas Lab 16oz", "Bebidas Lab", "Soda italiana artesanal bien fría con hielo, burbujeante y refrescante.", 12000, True),
-        ("012", "Michelada Lab 12oz", "Bebidas Lab", "Michelada estilo Lab con borde enchilado, hielo y toque de limón.", 14000, True),
-        ("013", "Bandeja Enchilada Lab", "Bandejas Lab", "Bandeja de frutas frescas en cubos con chamoy y chile piquín al centro.", 23000, True),
-        ("014", "Boosters Lab 8oz", "Adiciones Lab", "Booster en presentación pequeña para darle el toque perfecto a tu combo.", 3000, True),
-        ("015", "Lab Rolls - Pollo", "Productos Lab", "Lab Rolls - Pollo. Roll salado con pollo, champiñones, crema y salsa.", 22000, True),
-        ("016", "Lab Rolls - Dulce", "Productos Lab", "Lab Rolls - Dulce. Roll dulce con fresas y chocolate.", 22000, True),
-        ("017", "Lab Rolls - Proyecto Libre", "Productos Lab", "Roll de tortilla relleno a tu gusto, bañado en salsa especial de la casa.", 22000, True),
-        ("018", "Boosters Lab 20oz", "Adiciones Lab", "Booster en presentación grande para maximizar el sabor de tu experiencia.", 5000, True),
+        ("001", "Granizado Lab 9 oz", "Granizados Lab", "Granizado preparado con el Experimento del Día. Incluye 2 toppings, 1 paleta y 1 salsa del laboratorio.", 12000, True),
+        ("002", "Granizado Lab 12 oz", "Granizados Lab", "Granizado con el Experimento del Día. Incluye 3 toppings, 1 paleta y 1 salsa del laboratorio.", 15000, True),
+        ("003", "Raspado Lab 9 oz", "Bebidas Lab", "Hielo raspado con Fórmula Frutal, 1 salsa del laboratorio o leche condensada y 1 paleta.", 8000, True),
+        ("004", "Smoothie Lab 16 oz", "Bebidas Lab", "Fruta fresca licuada al momento. Incluye 3 toppings de frutas o dulces y 1 salsa.", 16000, True),
+        ("005", "Soda Lab 16 oz", "Bebidas Lab", "Bebida gasificada preparada con Bretaña y Fórmula Frutal.", 12000, True),
+        ("006", "Chamoyada 16 oz", "Experimentos", "Mango, hielo, chamoy y un toque enchilado.", 15000, True),
+        ("007", "Mangonada 16 oz", "Experimentos", "Mango, chamoy y hielo para una mezcla dulce, ácida y picante.", 15000, True),
+        ("008", "Maracumango 16 oz", "Experimentos", "Combinación de mango y maracuyá.", 15000, True),
+        ("009", "Lulada 16 oz", "Experimentos", "Lulo natural preparado al momento con hielo.", 15000, True),
+        ("010", "Bowl Lab", "Bowl y Bandeja", "Arma tu mezcla con 5 frutas, una base, 3 toppings y salsas del laboratorio.", 20000, True),
+        ("011", "Bandeja Lab", "Bowl y Bandeja", "Bandeja para compartir con 4 frutas premium, toppings, gomitas y salsas.", 35000, True),
+        ("012", "Crepa de Carne", "Crepas Lab", "Crepa artesanal con carne desmechada, ahogado, plátano maduro, queso, pico de gallo y salsa de aguacate.", 21000, True),
+        ("013", "Crepa de Pollo", "Crepas Lab", "Crepa artesanal de pollo, jamón, queso y champiñones con salsa bechamel y cilantro.", 21000, True),
+        ("014", "Crepa Lab Dulce", "Crepas Lab", "Crepa con frutas frescas, Nutella, queso, salsa de chocolate, leche condensada y azúcar glass.", 21000, True),
+        ("015", "Mini Donas x7", "Mini Donas", "Siete mini donas recién horneadas. Incluye 1 salsa y toppings de la barra.", 15000, True),
+        ("016", "Mini Donas x14", "Mini Donas", "Catorce mini donas para compartir. Incluye 2 salsas y toppings de la barra.", 25000, True),
+        ("017", "Michelada 12 oz", "Bebidas Lab", "Michelada con Sol o Coronita, escarchado de chamoy y Tajín, limón y mezcla especial Súper Lab.", 13000, True),
+        ("018", "Fórmula X 8 ml", "Adicionales", "Potenciador opcional de 8 ml para dar un toque extra de sabor.", 3000, False),
+        ("019", "Fórmula X Max 20 ml", "Adicionales", "Potenciador opcional de 20 ml para dar un toque extra de sabor.", 5000, False),
     ]
     imported_product_images = {
-        "007": "007.png",
-        "008": "008.png",
-        "009": "009.png",
-        "010": "010.png",
-        "011": "011.png",
-        "012": "012.png",
-        "013": "013.png",
-        "014": "014.png",
-        "017": "017.jpeg",
-        "018": "018.png",
+        "001": "001.webp",
+        "002": "001.webp",
+        "003": "002.webp",
+        "004": "003.webp",
+        "005": "011.png",
+        "006": "001.webp",
+        "007": "001.webp",
+        "008": "003.webp",
+        "009": "011.png",
+        "010": "004.webp",
+        "011": "005.webp",
+        "012": "006.webp",
+        "013": "015.webp",
+        "014": "016.webp",
+        "017": "012.png",
+        "018": "014.png",
+        "019": "018.png",
     }
     existing_products = {row.sku: row for row in db.scalars(select(Product).where(Product.sku.is_not(None))).all()}
     for code, name, category_name, description, price, customizable in catalog_products:
@@ -932,7 +924,8 @@ def seed(db):
         product.category_id = existing_categories[category_name].id
         product.name = name
         product.description = description
-        product.image_url = f"/static/products/{imported_product_images.get(code, f'{code}.webp')}"
+        image_file = imported_product_images.get(code)
+        product.image_url = f"/static/products/{image_file}" if image_file else None
         product.price = Decimal(price)
         product.available = True
         product.customizable = customizable

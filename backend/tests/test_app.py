@@ -30,28 +30,28 @@ def test_login_and_seeded_catalog(client):
     response = client.get("/api/catalog")
     assert response.status_code == 200
     products = response.get_json()["products"]
-    assert len(products) == 18
-    assert {product["sku"]: product["price"] for product in products}["001"] == 15000
-    assert {product["sku"]: product["name"] for product in products}["001"] == "Granizado Lab 12 oz"
-    assert {product["sku"]: product["name"] for product in products}["002"] == "Raspado Lab 12oz"
-    assert {product["sku"]: product["price"] for product in products}["002"] == 8000
-    assert {product["sku"]: product["name"] for product in products}["003"] == "Smoothie Lab 16oz"
-    assert {product["sku"]: product["price"] for product in products}["003"] == 16000
-    assert {product["sku"]: product["name"] for product in products}["004"] == "Bowl Lab"
-    assert {product["sku"]: product["price"] for product in products}["004"] == 17000
-    assert {product["sku"]: product["name"] for product in products}["005"] == "Bandeja fruti Lab"
-    assert {product["sku"]: product["price"] for product in products}["005"] == 25000
-    assert {product["sku"]: product["name"] for product in products}["006"] == "Lab Rolls - Carne"
-    assert {product["sku"]: product["price"] for product in products}["006"] == 22000
-    assert {product["sku"]: product["name"] for product in products}["015"] == "Lab Rolls - Pollo"
-    assert {product["sku"]: product["price"] for product in products}["015"] == 22000
-    assert {product["sku"]: product["name"] for product in products}["016"] == "Lab Rolls - Dulce"
-    assert {product["sku"]: product["price"] for product in products}["016"] == 22000
-    assert {product["sku"]: product["name"] for product in products}["013"] == "Bandeja Enchilada Lab"
-    assert {product["sku"]: product["name"] for product in products}["017"] == "Lab Rolls - Proyecto Libre"
-    assert {product["sku"]: product["price"] for product in products}["017"] == 22000
-    assert {product["sku"]: product["name"] for product in products}["018"] == "Boosters Lab 20oz"
-    assert {product["sku"]: product["price"] for product in products}["018"] == 5000
+    assert len(products) == 19
+    by_sku = {product["sku"]: product for product in products}
+    assert by_sku["001"]["name"] == "Granizado Lab 9 oz"
+    assert by_sku["001"]["price"] == 12000
+    assert by_sku["002"]["name"] == "Granizado Lab 12 oz"
+    assert by_sku["002"]["price"] == 15000
+    assert by_sku["003"]["name"] == "Raspado Lab 9 oz"
+    assert by_sku["003"]["price"] == 8000
+    assert by_sku["004"]["name"] == "Smoothie Lab 16 oz"
+    assert by_sku["004"]["price"] == 16000
+    assert by_sku["010"]["name"] == "Bowl Lab"
+    assert by_sku["010"]["price"] == 20000
+    assert by_sku["011"]["name"] == "Bandeja Lab"
+    assert by_sku["011"]["price"] == 35000
+    assert by_sku["012"]["name"] == "Crepa de Carne"
+    assert by_sku["012"]["price"] == 21000
+    assert by_sku["015"]["name"] == "Mini Donas x7"
+    assert by_sku["015"]["price"] == 15000
+    assert by_sku["017"]["name"] == "Michelada 12 oz"
+    assert by_sku["017"]["price"] == 13000
+    assert by_sku["019"]["name"] == "Fórmula X Max 20 ml"
+    assert by_sku["019"]["price"] == 5000
 
 
 def test_database_health_and_admin_diagnostics(client):
@@ -68,7 +68,7 @@ def test_database_health_and_admin_diagnostics(client):
     data = status.get_json()
     assert data["connected"] is True
     assert data["persistent"] is False
-    assert data["counts"]["products"] == 18
+    assert data["counts"]["products"] == 19
 
 
 def test_supabase_url_is_normalized_with_psycopg_and_ssl():
@@ -111,24 +111,24 @@ def test_priced_modifiers_are_added_to_order_total(client):
     response = client.post("/api/orders", json={
         "status": "paid",
         "payment_method": "cash",
-        "received": 18000,
+        "received": 15000,
         "items": [{
             "product_id": granizado["id"],
             "quantity": 1,
-            "toppings": ["Elige 3 toppings: Fresa"],
-            "modifiers": [{"name": "Fórmula 1 — 2 toppings + 1 salsa"}],
+            "toppings": ["Elige 2 toppings: Gomitas"],
+            "modifiers": [{"code": "booster_8"}],
         }],
     })
     assert response.status_code == 201
     order = response.get_json()["order"]
-    assert order["total"] == 18000
-    assert order["items"][0]["unit_price"] == 18000
+    assert order["total"] == 15000
+    assert order["items"][0]["unit_price"] == 15000
 
 
-def test_formula_is_restricted_to_granizado(client):
+def test_legacy_formula_is_rejected(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
-    bowl = next(product for product in catalog["products"] if product["sku"] == "004")
+    bowl = next(product for product in catalog["products"] if product["sku"] == "010")
     client.post("/api/cash-session/open", json={"opening_cash": 0})
     response = client.post("/api/orders", json={
         "status": "held",
@@ -139,7 +139,7 @@ def test_formula_is_restricted_to_granizado(client):
         }],
     })
     assert response.status_code == 400
-    assert "Granizado" in response.get_json()["error"]
+    assert "anteriores" in response.get_json()["error"]
 
 
 def test_tablet_order_reaches_worker_command_queue(client):
@@ -186,7 +186,7 @@ def test_worker_cannot_access_admin(client):
 def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
-    assert len(catalog["products"]) == 18
+    assert len(catalog["products"]) == 19
     assert all(product["sku"].isdigit() for product in catalog["products"])
     assert client.post("/api/products", json={
         "name": "Código inválido", "category_id": 1, "sku": "ABC-15",
@@ -197,4 +197,4 @@ def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     product_id = catalog["products"][0]["id"]
     assert client.delete(f"/api/products/{product_id}").status_code == 200
     remaining = client.get("/api/catalog").get_json()["products"]
-    assert len(remaining) == 14
+    assert len(remaining) == 18
