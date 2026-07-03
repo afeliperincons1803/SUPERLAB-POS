@@ -51,7 +51,7 @@ function renderTabletCategories(){
 }
 function renderTabletProducts(){
   const products=tabletState.products.filter(p=>tabletState.category==='all'||String(p.category_id)===String(tabletState.category));
-  $t('#tablet-products').innerHTML=products.map(p=>`<button class="tablet-product" data-product="${p.id}">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}">`:''}<div><strong>${esc(p.name)}</strong><small>${esc(p.description||'')}</small><b>${money(p.price)}</b></div></button>`).join('');
+  $t('#tablet-products').innerHTML=products.map(p=>`<button class="tablet-product" data-product="${p.id}">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" decoding="async">`:''}<div><strong>${esc(p.name)}</strong><small>${esc(p.description||'')}</small><b>${money(p.price)}</b></div></button>`).join('');
   $$t('[data-product]').forEach(b=>b.onclick=()=>selectTabletProduct(Number(b.dataset.product)));
 }
 function baseSections(sku){

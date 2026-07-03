@@ -198,3 +198,22 @@ def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     assert client.delete(f"/api/products/{product_id}").status_code == 200
     remaining = client.get("/api/catalog").get_json()["products"]
     assert len(remaining) == 18
+
+
+def test_inventory_alerts_allow_zero_stock(client):
+    login(client)
+    items = client.get("/api/inventory").get_json()["items"]
+    assert items
+    assert all(item["status"] == "critical" for item in items)
+    item = items[0]
+    response = client.put(f"/api/inventory/{item['id']}", json={
+        "name": item["name"],
+        "category": item["category"],
+        "quantity": 1500,
+        "unit": "g",
+        "critical_level": 500,
+        "low_level": 1000,
+        "notes": "Prueba de inventario",
+    })
+    assert response.status_code == 200
+    assert response.get_json()["item"]["status"] == "ok"

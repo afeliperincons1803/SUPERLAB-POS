@@ -1,4 +1,4 @@
-const state = { user:null, store:null, categories:[], products:[], toppings:[], cart:[], category:'all', search:'', cash:null, reports:null, chart:null };
+const state = { user:null, store:null, categories:[], products:[], toppings:[], inventory:[], cart:[], category:'all', search:'', cash:null, reports:null, chart:null };
 const $ = (selector, root=document) => root.querySelector(selector);
 const $$ = (selector, root=document) => [...root.querySelectorAll(selector)];
 const fmt = value => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(Number(value || 0)).replace('COP','$');
@@ -52,22 +52,24 @@ function bind() {
   $('#checkout').onclick=showCheckout;
   $('#hold-order').onclick=()=>submitOrder('held');
   $('#new-product')?.addEventListener('click',()=>showProductForm());
+  $('#new-stock-item')?.addEventListener('click',()=>showStockForm());
   $('#new-worker')?.addEventListener('click',showWorkerForm);
   $$('[data-refresh="orders"]').forEach(x=>x.onclick=loadOrders);
   $('#daily-date')?.addEventListener('change',loadDailySummary);
 }
 
 async function navigate(view) {
-  const allowed=['pos','orders','cash',...(state.user.role==='superadmin'?['dashboard','daily','products','workers','reports']:[])];
+  const allowed=['pos','orders','cash',...(state.user.role==='superadmin'?['dashboard','daily','products','inventory','workers','reports']:[])];
   if(!allowed.includes(view))view='pos';
   location.hash=view;
   $$('.view').forEach(x=>x.classList.toggle('active',x.id===`view-${view}`));
   $$('#nav [data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===view));
-  const names={pos:['OPERACIÓN','Punto de venta'],orders:['OPERACIÓN','Pedidos'],cash:['OPERACIÓN','Caja'],dashboard:['GESTIÓN','Resumen'],daily:['GESTIÓN','Resumen diario'],products:['CATÁLOGO','Productos'],workers:['EQUIPO','Trabajadores'],reports:['ANÁLISIS','Informes']};
+  const names={pos:['OPERACIÓN','Punto de venta'],orders:['OPERACIÓN','Pedidos'],cash:['OPERACIÓN','Caja'],dashboard:['GESTIÓN','Resumen'],daily:['GESTIÓN','Resumen diario'],products:['CATÁLOGO','Productos'],inventory:['INVENTARIO','Stock y alertas'],workers:['EQUIPO','Trabajadores'],reports:['ANÁLISIS','Informes']};
   $('#page-kicker').textContent=names[view][0];$('#page-title').textContent=names[view][1];$('.sidebar').classList.remove('open');
   if(view==='orders')await loadOrders();
   if(view==='cash')await loadCash();
   if(view==='products')renderProductTable();
+  if(view==='inventory')await loadInventory();
   if(view==='daily')await loadDailySummary();
   if(view==='workers')await loadWorkers();
   if(['dashboard','reports'].includes(view))await loadReports(view);
@@ -81,7 +83,7 @@ function renderCategoryTabs() {
 }
 function renderProducts() {
   const products=state.products.filter(p=>!['018','019'].includes(String(p.sku))&&(state.category==='all'||String(p.category_id)===String(state.category))&&(`${p.name} ${p.sku||''}`.toLowerCase().includes(state.search)));
-  $('#product-grid').innerHTML=products.length?products.map(p=>`<button class="product-card" data-product="${p.id}" ${p.price===null||!p.available?'disabled':''}><div class="product-visual">${p.image_url?`<img src="${escapeAttr(p.image_url)}" alt="${escapeAttr(p.name)}">`:state.categories.find(x=>x.id===p.category_id)?.icon||'🧪'}</div><div class="product-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category)}</small><span class="price">${p.price===null?'Precio pendiente':fmt(p.price)}</span></div></button>`).join(''):`<div class="empty-state"><div class="empty-icon">⚗️</div><h3>${state.products.length?'Sin coincidencias':'El catálogo está listo para comenzar'}</h3><p>${state.products.length?'Prueba otra búsqueda o categoría.':'Los productos y sus precios serán agregados por el superusuario desde Gestión → Productos.'}</p></div>`;
+  $('#product-grid').innerHTML=products.length?products.map(p=>`<button class="product-card" data-product="${p.id}" ${p.price===null||!p.available?'disabled':''}><div class="product-visual">${p.image_url?`<img src="${escapeAttr(p.image_url)}" alt="${escapeAttr(p.name)}" loading="lazy" decoding="async">`:state.categories.find(x=>x.id===p.category_id)?.icon||'🧪'}</div><div class="product-info"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.category)}</small><span class="price">${p.price===null?'Precio pendiente':fmt(p.price)}</span></div></button>`).join(''):`<div class="empty-state"><div class="empty-icon">⚗️</div><h3>${state.products.length?'Sin coincidencias':'El catálogo está listo para comenzar'}</h3><p>${state.products.length?'Prueba otra búsqueda o categoría.':'Los productos y sus precios serán agregados por el superusuario desde Gestión → Productos.'}</p></div>`;
   $$('.product-card').forEach(x=>x.onclick=()=>addProduct(Number(x.dataset.product)));
 }
 function addProduct(id) {
@@ -185,8 +187,30 @@ function renderProductTable() {
 function showProductForm(product=null) {
   openModal(`<p class="eyebrow orange">CATÁLOGO</p><h2>${product?'Editar':'Nuevo'} producto</h2><form id="product-form" class="form-grid"><label>Nombre<input name="name" value="${escapeAttr(product?.name||'')}" required></label><label>Categoría<select name="category_id">${state.categories.map(x=>`<option value="${x.id}" ${x.id===product?.category_id?'selected':''}>${escapeHtml(x.name)}</option>`).join('')}</select></label><label>Precio COP <small>Puede quedar vacío</small><input name="price" type="number" min="0" value="${product?.price??''}"></label><label>Código numérico<input name="sku" inputmode="numeric" pattern="[0-9]*" maxlength="18" value="${escapeAttr(product?.sku||'')}" placeholder="Ej. 015"></label><label class="full">Imagen por URL<input name="image_url" value="${product?.image_url?.startsWith('data:')?'':escapeAttr(product?.image_url||'')}" placeholder="https://..."></label><label class="full">O subir imagen <small>JPG, PNG o WebP · máximo 2 MB</small><input id="image-file" type="file" accept="image/jpeg,image/png,image/webp"></label><div id="image-preview" class="full image-preview">${product?.image_url?`<img src="${escapeAttr(product.image_url)}" alt="Vista previa">`:'Sin imagen seleccionada'}</div><label class="full">Descripción<textarea name="description">${escapeHtml(product?.description||'')}</textarea></label><label><span>Disponible</span><select name="available"><option value="true" ${product?.available!==false?'selected':''}>Sí</option><option value="false" ${product?.available===false?'selected':''}>No</option></select></label><label><span>Personalizable</span><select name="customizable"><option value="false">No</option><option value="true" ${product?.customizable?'selected':''}>Sí</option></select></label><div class="form-actions"><button type="button" class="button secondary" onclick="document.querySelector('.modal-close').click()">Cancelar</button><button class="button primary">Guardar producto</button></div></form>`);
   let uploadedImage=product?.image_url?.startsWith('data:')?product.image_url:null;
-  $('#image-file').onchange=async e=>{const file=e.target.files[0];if(!file)return;if(file.size>2_000_000){toast('La imagen no puede superar 2 MB','error');e.target.value='';return}uploadedImage=await fileToDataUrl(file);$('#image-preview').innerHTML=`<img src="${uploadedImage}" alt="Vista previa">`};
+  $('#image-file').onchange=async e=>{const file=e.target.files[0];if(!file)return;if(file.size>10_000_000){toast('La imagen no puede superar 10 MB','error');e.target.value='';return}uploadedImage=await optimizeImage(file);$('#image-preview').innerHTML=`<img src="${uploadedImage}" alt="Vista previa">`;toast('Imagen optimizada para carga rápida')};
   $('#product-form').onsubmit=async e=>{e.preventDefault();const raw=Object.fromEntries(new FormData(e.currentTarget));raw.image_url=uploadedImage||raw.image_url||null;raw.available=raw.available==='true';raw.customizable=raw.customizable==='true';raw.price=raw.price===''?null:Number(raw.price);try{await api(product?`/api/products/${product.id}`:'/api/products',{method:product?'PUT':'POST',body:JSON.stringify(raw)});await loadCatalog();renderProductTable();closeModal();toast('Producto guardado')}catch(error){toast(error.message,'error')}};
+}
+
+async function loadInventory() {
+  const {items}=await api('/api/inventory');state.inventory=items;renderInventory();
+}
+function stockNumber(value){return Number(value||0).toLocaleString('es-CO',{maximumFractionDigits:3})}
+function renderInventory() {
+  const counts={ok:0,low:0,critical:0};state.inventory.forEach(x=>counts[x.status]++);
+  $('#inventory-kpis').innerHTML=[
+    ['Total de insumos',state.inventory.length,'▦','#edf3ff'],
+    ['Stock suficiente',counts.ok,'✓','#eaf8f1'],
+    ['Próximos a acabarse',counts.low,'!','#fff4df'],
+    ['Críticos o en cero',counts.critical,'×','#ffe8e8'],
+  ].map(x=>`<article class="kpi" style="--accent:${x[3]}"><span class="kpi-icon">${x[2]}</span><small>${x[0]}</small><strong>${x[1]}</strong></article>`).join('');
+  $('#inventory-table').innerHTML=state.inventory.length?state.inventory.map(x=>`<tr><td><span class="stock-status ${x.status}"><i></i>${x.status==='ok'?'Bien':x.status==='low'?'Próximo':'Crítico'}</span></td><td><strong>${escapeHtml(x.name)}</strong>${x.notes?`<br><small>${escapeHtml(x.notes)}</small>`:''}</td><td>${escapeHtml(x.category)}</td><td><strong>${stockNumber(x.quantity)} ${escapeHtml(x.unit)}</strong></td><td>${stockNumber(x.critical_level)} ${escapeHtml(x.unit)}</td><td>${stockNumber(x.low_level)} ${escapeHtml(x.unit)}</td><td>${dateFmt(x.updated_at)}</td><td><div class="row-actions"><button data-edit-stock="${x.id}">Editar</button><button class="delete-row" data-delete-stock="${x.id}">Eliminar</button></div></td></tr>`).join(''):'<tr><td colspan="8">Todavía no hay insumos registrados.</td></tr>';
+  $$('[data-edit-stock]').forEach(b=>b.onclick=()=>showStockForm(state.inventory.find(x=>x.id===Number(b.dataset.editStock))));
+  $$('[data-delete-stock]').forEach(b=>b.onclick=async()=>{const item=state.inventory.find(x=>x.id===Number(b.dataset.deleteStock));if(!confirm(`¿Eliminar "${item.name}" del inventario?`))return;try{await api(`/api/inventory/${item.id}`,{method:'DELETE'});await loadInventory();toast('Insumo eliminado')}catch(error){toast(error.message,'error')}});
+}
+function showStockForm(item=null) {
+  const units=['g','kg','ml','l','unidad','paquete'];
+  openModal(`<p class="eyebrow orange">INVENTARIO</p><h2>${item?'Editar':'Nuevo'} insumo</h2><p class="muted">El stock informativo puede quedar en cero y nunca bloqueará una venta.</p><form id="stock-form" class="form-grid"><label>Nombre<input name="name" value="${escapeAttr(item?.name||'')}" required></label><label>Categoría<input name="category" value="${escapeAttr(item?.category||'General')}" placeholder="Frutas, salsas…"></label><label>Cantidad actual<input name="quantity" type="number" min="0" step="0.001" value="${item?.quantity??0}" required></label><label>Unidad<select name="unit">${units.map(x=>`<option value="${x}" ${x===item?.unit?'selected':''}>${x}</option>`).join('')}</select></label><label>Alerta roja desde<input name="critical_level" type="number" min="0" step="0.001" value="${item?.critical_level??0}" required><small>Crítico si queda esta cantidad o menos.</small></label><label>Alerta amarilla desde<input name="low_level" type="number" min="0" step="0.001" value="${item?.low_level??0}" required><small>Próximo a acabarse si queda esta cantidad o menos.</small></label><label class="full">Notas<textarea name="notes" placeholder="Proveedor, presentación, ubicación…">${escapeHtml(item?.notes||'')}</textarea></label><div class="form-actions"><button type="button" class="button secondary" onclick="document.querySelector('.modal-close').click()">Cancelar</button><button class="button primary">Guardar insumo</button></div></form>`);
+  $('#stock-form').onsubmit=async e=>{e.preventDefault();const raw=Object.fromEntries(new FormData(e.currentTarget));['quantity','critical_level','low_level'].forEach(key=>raw[key]=Number(raw[key]||0));try{await api(item?`/api/inventory/${item.id}`:'/api/inventory',{method:item?'PUT':'POST',body:JSON.stringify(raw)});closeModal();await loadInventory();toast('Inventario actualizado')}catch(error){toast(error.message,'error')}};
 }
 
 async function loadWorkers() {
@@ -245,7 +269,7 @@ function renderFullReport() {
 }
 function metricRow(name,value,width){return `<div class="metric-row"><div><strong>${escapeHtml(name)}</strong><div class="metric-bar"><i style="width:${Math.max(2,width)}%"></i></div></div><strong>${value}</strong></div>`}
 function paymentName(value){return ({cash:'Efectivo',qr:'Consignación QR',card:'Tarjeta',mixed:'Mixto',transfer:'Consignación QR',pending:'Pendiente en caja'})[value]||value}
-function fileToDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)})}
+function optimizeImage(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const image=new Image();image.onerror=reject;image.onload=()=>{const max=1200,scale=Math.min(1,max/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.round(image.width*scale);canvas.height=Math.round(image.height*scale);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/webp',.82))};image.src=reader.result};reader.readAsDataURL(file)})}
 function escapeHtml(value){return String(value??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]))}
 function escapeAttr(value){return escapeHtml(value)}
 

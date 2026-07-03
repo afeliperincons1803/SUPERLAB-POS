@@ -22,6 +22,7 @@
         <button data-view="dashboard"><span>◫</span> Resumen</button>
         <button data-view="daily"><span>◷</span> Resumen diario</button>
         <button data-view="products"><span>◇</span> Productos</button>
+        <button data-view="inventory"><span>▦</span> Inventario</button>
         <button data-view="workers"><span>♙</span> Trabajadores</button>
         <button data-view="reports"><span>⌁</span> Informes</button>
       </div>
@@ -105,6 +106,13 @@
     <section id="view-products" class="view content-view">
       <div class="section-toolbar"><div><h2>Productos</h2><p>Los precios comienzan vacíos y solo el superusuario puede configurarlos.</p></div><button id="new-product" class="button primary">＋ Nuevo producto</button></div>
       <div class="table-card"><table><thead><tr><th>Producto</th><th>Categoría</th><th>Código</th><th>Precio</th><th>Disponible</th><th></th></tr></thead><tbody id="products-table"></tbody></table></div>
+    </section>
+
+    <section id="view-inventory" class="view content-view">
+      <div class="section-toolbar"><div><h2>Inventario de insumos</h2><p>Controla cantidades y alertas sin bloquear las ventas cuando el stock llegue a cero.</p></div><button id="new-stock-item" class="button primary">＋ Nuevo insumo</button></div>
+      <div id="inventory-kpis" class="kpi-grid"></div>
+      <div class="inventory-legend"><span><i class="stock-dot ok"></i> Stock suficiente</span><span><i class="stock-dot low"></i> Próximo a acabarse</span><span><i class="stock-dot critical"></i> Crítico o en cero</span></div>
+      <div class="table-card"><table><thead><tr><th>Estado</th><th>Insumo</th><th>Categoría</th><th>Cantidad</th><th>Alerta roja</th><th>Alerta amarilla</th><th>Actualizado</th><th></th></tr></thead><tbody id="inventory-table"></tbody></table></div>
     </section>
 
     <section id="view-workers" class="view content-view">

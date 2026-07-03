@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import mimetypes
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from functools import wraps
@@ -39,6 +40,7 @@ except ZoneInfoNotFoundError:
     BOGOTA = timezone(timedelta(hours=-5))
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 load_dotenv(Path(__file__).resolve().parents[1] / ".env.tablet")
+mimetypes.add_type("image/webp", ".webp")
 
 
 class Base(DeclarativeBase):
@@ -67,6 +69,12 @@ class Category(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+
+
 class Product(Base):
     __tablename__ = "products"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -90,6 +98,24 @@ class Topping(Base):
     group_name: Mapped[str] = mapped_column(String(60))
     price: Mapped[Decimal | None] = mapped_column(Numeric(12, 0), nullable=True)
     available: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class StockItem(Base):
+    __tablename__ = "stock_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    category: Mapped[str] = mapped_column(String(60), default="General")
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    unit: Mapped[str] = mapped_column(String(20), default="unidad")
+    critical_level: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    low_level: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
 
 
 class CashSession(Base):
@@ -278,7 +304,13 @@ def create_app(test_config=None):
 
     @app.get("/static/<path:path>")
     def static_files(path):
-        return send_from_directory(FRONTEND / "static", path)
+        response = send_from_directory(FRONTEND / "static", path)
+        if path.startswith("products/"):
+            response.cache_control.no_cache = False
+            response.cache_control.public = True
+            response.cache_control.max_age = 604800
+            response.cache_control.immutable = True
+        return response
 
     @app.post("/api/auth/login")
     def login():
@@ -328,6 +360,7 @@ def create_app(test_config=None):
                 "users": db.scalar(select(func.count(User.id))) or 0,
                 "products": db.scalar(select(func.count(Product.id)).where(Product.deleted_at.is_(None))) or 0,
                 "toppings": db.scalar(select(func.count(Topping.id))) or 0,
+                "inventory": db.scalar(select(func.count(StockItem.id)).where(StockItem.active.is_(True))) or 0,
                 "orders": db.scalar(select(func.count(Order.id))) or 0,
             },
         )
@@ -400,6 +433,50 @@ def create_app(test_config=None):
             db.rollback()
             return jsonify(error="El código ya está asignado a otro producto"), 409
         return jsonify(product=serialize_product(product))
+
+    @app.route("/api/inventory", methods=["GET", "POST"])
+    @auth_required(admin=True)
+    def inventory(db, user):
+        if request.method == "GET":
+            rows = db.scalars(
+                select(StockItem).where(StockItem.active.is_(True)).order_by(StockItem.category, StockItem.name)
+            ).all()
+            return jsonify(items=[serialize_stock_item(x) for x in rows])
+        data = request.get_json(silent=True) or {}
+        error = validate_stock_item(data)
+        if error:
+            return jsonify(error=error), 400
+        item = StockItem()
+        apply_stock_item(item, data)
+        db.add(item)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return jsonify(error="Ya existe un insumo con ese nombre"), 409
+        return jsonify(item=serialize_stock_item(item)), 201
+
+    @app.route("/api/inventory/<int:item_id>", methods=["PUT", "DELETE"])
+    @auth_required(admin=True)
+    def inventory_detail(db, user, item_id):
+        item = db.get(StockItem, item_id)
+        if not item or not item.active:
+            return jsonify(error="Insumo no encontrado"), 404
+        if request.method == "DELETE":
+            item.active = False
+            db.commit()
+            return jsonify(ok=True)
+        data = request.get_json(silent=True) or {}
+        error = validate_stock_item(data)
+        if error:
+            return jsonify(error=error), 400
+        apply_stock_item(item, data)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return jsonify(error="Ya existe un insumo con ese nombre"), 409
+        return jsonify(item=serialize_stock_item(item))
 
     @app.route("/api/users", methods=["GET", "POST"])
     @auth_required(admin=True)
@@ -874,6 +951,28 @@ def seed(db):
             topping.group_name = group
             topping.available = True
 
+    existing_stock = {row.name: row for row in db.scalars(select(StockItem)).all()}
+    for group, names in topping_specs.items():
+        if group == "Boosters Lab":
+            continue
+        is_weight = group in {"Frutas", "Dulces", "Crunch", "Perlas", "Sales"}
+        is_volume = group in {"Salsas", "Siropes"}
+        unit = "g" if is_weight else "ml" if is_volume else "unidad"
+        critical_level = Decimal(500 if is_weight or is_volume else 5)
+        low_level = Decimal(1000 if is_weight or is_volume else 10)
+        for name in names:
+            if name not in existing_stock:
+                item = StockItem(
+                    name=name,
+                    category=group,
+                    quantity=0,
+                    unit=unit,
+                    critical_level=critical_level,
+                    low_level=low_level,
+                )
+                db.add(item)
+                existing_stock[name] = item
+
     db.flush()
     catalog_products = [
         ("001", "Granizado Lab 9 oz", "Granizados Lab", "Granizado preparado con el Experimento del Día. Incluye 2 toppings, 1 paleta y 1 salsa del laboratorio.", 12000, True),
@@ -897,39 +996,50 @@ def seed(db):
         ("019", "Fórmula X Max 20 ml", "Adicionales", "Potenciador opcional de 20 ml para dar un toque extra de sabor.", 5000, False),
     ]
     imported_product_images = {
-        "001": "001.webp",
-        "002": "001.webp",
-        "003": "002.webp",
-        "004": "003.webp",
-        "005": "011.png",
-        "006": "001.webp",
-        "007": "001.webp",
-        "008": "003.webp",
-        "009": "011.png",
-        "010": "004.webp",
-        "011": "005.webp",
-        "012": "006.webp",
-        "013": "015.webp",
-        "014": "016.webp",
-        "017": "012.png",
+        "001": "001-menu.webp",
+        "002": "002-menu.webp",
+        "003": "003-menu.webp",
+        "004": "004-menu.webp",
+        "005": "005-menu.webp",
+        "006": "006-menu.webp",
+        "007": "007-menu.webp",
+        "008": "008-menu.webp",
+        "009": "009-menu.webp",
+        "010": "010-menu.webp",
+        "011": "011-menu.webp",
+        "012": "012-menu.webp",
+        "013": "013-menu.webp",
+        "014": "014-menu.webp",
+        "015": "015-menu.webp",
+        "016": "016-menu.webp",
+        "017": "017-menu.webp",
         "018": "014.png",
         "019": "018.png",
     }
     existing_products = {row.sku: row for row in db.scalars(select(Product).where(Product.sku.is_not(None))).all()}
+    catalog_version = "2026-07-definitive-menu-images-v1"
+    version_setting = db.get(AppSetting, "catalog_version")
+    apply_catalog = not version_setting or version_setting.value != catalog_version
     for code, name, category_name, description, price, customizable in catalog_products:
         product = existing_products.get(code)
+        is_new = product is None
         if not product:
             product = Product(sku=code)
             db.add(product)
-        product.category_id = existing_categories[category_name].id
-        product.name = name
-        product.description = description
-        image_file = imported_product_images.get(code)
-        product.image_url = f"/static/products/{image_file}" if image_file else None
-        product.price = Decimal(price)
-        product.available = True
-        product.customizable = customizable
-        product.deleted_at = None
+        if is_new or apply_catalog:
+            product.category_id = existing_categories[category_name].id
+            product.name = name
+            product.description = description
+            image_file = imported_product_images.get(code)
+            product.image_url = f"/static/products/{image_file}" if image_file else None
+            product.price = Decimal(price)
+            product.available = True
+            product.customizable = customizable
+            product.deleted_at = None
+    if not version_setting:
+        version_setting = AppSetting(key="catalog_version")
+        db.add(version_setting)
+    version_setting.value = catalog_version
     db.commit()
 
 
@@ -971,9 +1081,49 @@ def validate_image(value):
     image = str(value or "").strip() or None
     if image and len(image) > 3_000_000:
         raise ValueError("La imagen supera el tamaño permitido")
-    if image and not (image.startswith(("https://", "http://", "data:image/"))):
+    if image and not (image.startswith(("https://", "http://", "data:image/", "/static/products/"))):
         raise ValueError("La imagen debe ser una URL válida o un archivo de imagen")
     return image
+
+
+def parse_stock_amount(value, field):
+    try:
+        amount = Decimal(str(value if value not in (None, "") else 0))
+    except Exception as exc:
+        raise ValueError(f"{field} debe ser un número válido") from exc
+    if amount < 0:
+        raise ValueError(f"{field} no puede ser negativo")
+    return amount.quantize(Decimal("0.001"))
+
+
+def validate_stock_item(data):
+    name = str(data.get("name", "")).strip()
+    unit = str(data.get("unit", "")).strip()
+    if len(name) < 2:
+        return "Escribe el nombre del insumo"
+    if unit not in {"g", "kg", "ml", "l", "unidad", "paquete"}:
+        return "Selecciona una unidad válida"
+    try:
+        critical = parse_stock_amount(data.get("critical_level"), "Nivel crítico")
+        low = parse_stock_amount(data.get("low_level"), "Nivel bajo")
+        parse_stock_amount(data.get("quantity"), "Cantidad")
+    except ValueError as exc:
+        return str(exc)
+    if low < critical:
+        return "El nivel amarillo debe ser mayor o igual al nivel crítico rojo"
+    return None
+
+
+def apply_stock_item(item, data):
+    item.name = str(data.get("name", "")).strip()
+    item.category = str(data.get("category", "General")).strip() or "General"
+    item.quantity = parse_stock_amount(data.get("quantity"), "Cantidad")
+    item.unit = str(data.get("unit", "unidad")).strip()
+    item.critical_level = parse_stock_amount(data.get("critical_level"), "Nivel crítico")
+    item.low_level = parse_stock_amount(data.get("low_level"), "Nivel bajo")
+    item.notes = str(data.get("notes", "")).strip()
+    item.active = True
+    item.updated_at = datetime.now(timezone.utc)
 
 
 def validate_product(data):
@@ -1016,6 +1166,25 @@ def serialize_order(x):
         "card_amount": money(x.card_amount), "subtotal": money(x.subtotal), "discount": money(x.discount),
         "total": money(x.total), "received": money(x.received), "notes": x.notes, "created_at": bogota_iso(x.created_at),
         "items": [{"name": i.product_name, "quantity": i.quantity, "unit_price": money(i.unit_price), "subtotal": money(i.subtotal), "toppings": i.toppings} for i in x.items],
+    }
+
+
+def serialize_stock_item(x):
+    quantity = Decimal(x.quantity or 0)
+    critical = Decimal(x.critical_level or 0)
+    low = Decimal(x.low_level or 0)
+    status = "critical" if quantity <= critical else "low" if quantity <= low else "ok"
+    return {
+        "id": x.id,
+        "name": x.name,
+        "category": x.category,
+        "quantity": float(quantity),
+        "unit": x.unit,
+        "critical_level": float(critical),
+        "low_level": float(low),
+        "status": status,
+        "notes": x.notes,
+        "updated_at": bogota_iso(x.updated_at),
     }
 
 
