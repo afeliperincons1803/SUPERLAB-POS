@@ -872,8 +872,9 @@ def validate_modifier_eligibility(product, raw):
     booster_codes = {"booster_8", "booster_20"}
     if codes & formula_codes:
         raise ValueError("Las fórmulas anteriores ya no están disponibles en la carta")
-    if codes & booster_codes and str(product.sku) not in {f"{number:03d}" for number in range(1, 18)}:
-        raise ValueError("La Fórmula X solo se puede agregar a una preparación de la carta")
+    formula_x_skus = {f"{number:03d}" for number in range(1, 10)} | {"017"}
+    if codes & booster_codes and str(product.sku) not in formula_x_skus:
+        raise ValueError("La Fórmula X solo se puede agregar a bebidas, granizados, experimentos y micheladas")
 
 
 def seed(db):
@@ -927,18 +928,19 @@ def seed(db):
         category.active = True
 
     topping_specs = {
-        "Frutas": ["Fresa", "Mango", "Sandía", "Kiwi", "Arándanos", "Frambuesa", "Mora", "Cereza", "Piña", "Uva", "Tomate de árbol", "Melón"],
-        "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Frutos Cítricos", "Sandía", "Mango"],
+        "Frutas": ["Mango dulce", "Mango biche", "Manzana", "Sandía", "Piña", "Kiwi", "Cereza", "Fresa", "Uva", "Maracuyá", "Lulo", "Mora", "Uva verde", "Durazno"],
+        "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Frutos Cítricos", "Smoothie Sandía", "Smoothie Mango"],
         "Siropes": ["Sirope Fresa", "Sirope Mora Azul", "Sirope Mango", "Sirope Maracuyá", "Sirope Cereza", "Sirope Uva", "Sirope Limón"],
         "Dulces": ["Gomitas Osito", "Gomitas Agrias", "Malvaviscos", "Chocolatinas", "Chispas de Colores"],
         "Crunch": ["Galleta Oreo", "Granola", "Cereal Colorido", "Coco Rallado", "Maní"],
         "Perlas": ["Perlas de Tapioca", "Perlas de Fruta", "Perlas Explosivas"],
-        "Salsas": ["Chamoy", "Chocolate", "Leche Condensada", "Sirope", "Salsa Fresa", "Caramelo", "Crema de Leche", "Yogur"],
-        "Sales": ["Sales dulces", "Sales picantes", "Miguelito", "Tajín"],
+        "Salsas": ["Leche Condensada", "Salsa de Caramelo", "Salsa de Chamoy", "Salsa de Chocolate", "Salsa de Fresa", "Salsa de Piña"],
+        "Adicionales sin costo": ["Tajín", "Pimienta", "Sal"],
+        "Sales": ["Sales dulces", "Sales picantes", "Miguelito"],
         "Paletas": ["Paleta dulce", "Paleta ácida"],
         "Proteínas": ["Pollo", "Carne", "Proyecto libre", "Dulce"],
         "Boosters Lab": ["Chocolate booster", "Licor booster", "Chamoy booster", "Leche Condensada booster", "Sirope booster"],
-        "Cervezas": ["Sol", "Coronita"],
+        "Cervezas": ["Coronita"],
     }
     existing_toppings = {row.name: row for row in db.scalars(select(Topping)).all()}
     for group, names in topping_specs.items():
@@ -950,6 +952,12 @@ def seed(db):
                 existing_toppings[name] = topping
             topping.group_name = group
             topping.available = True
+
+    valid_toppings = {group: set(names) for group, names in topping_specs.items()}
+    for topping in existing_toppings.values():
+        valid_names = valid_toppings.get(topping.group_name)
+        if valid_names is not None and topping.name not in valid_names:
+            topping.available = False
 
     existing_stock = {row.name: row for row in db.scalars(select(StockItem)).all()}
     for group, names in topping_specs.items():
@@ -984,14 +992,14 @@ def seed(db):
         ("007", "Mangonada 16 oz", "Experimentos", "Mango, chamoy y hielo para una mezcla dulce, ácida y picante.", 15000, True),
         ("008", "Maracumango 16 oz", "Experimentos", "Combinación de mango y maracuyá.", 15000, True),
         ("009", "Lulada 16 oz", "Experimentos", "Lulo natural preparado al momento con hielo.", 15000, True),
-        ("010", "Bowl Lab", "Bowl y Bandeja", "Arma tu mezcla con 5 frutas, una base, 3 toppings y salsas del laboratorio.", 20000, True),
-        ("011", "Bandeja Lab", "Bowl y Bandeja", "Bandeja para compartir con 4 frutas premium, toppings, gomitas y salsas.", 35000, True),
+        ("010", "Bowl Lab", "Bowl y Bandeja", "Arma tu mezcla con 5 frutas, una base, 3 toppings, salsas del laboratorio y adicionales sin costo.", 20000, True),
+        ("011", "Bandeja Lab", "Bowl y Bandeja", "Bandeja para compartir con 4 frutas premium, toppings, gomitas, salsas y adicionales sin costo.", 35000, True),
         ("012", "Crepa de Carne", "Crepas Lab", "Crepa artesanal con carne desmechada, ahogado, plátano maduro, queso, pico de gallo y salsa de aguacate.", 21000, True),
         ("013", "Crepa de Pollo", "Crepas Lab", "Crepa artesanal de pollo, jamón, queso y champiñones con salsa bechamel y cilantro.", 21000, True),
         ("014", "Crepa Lab Dulce", "Crepas Lab", "Crepa con frutas frescas, Nutella, queso, salsa de chocolate, leche condensada y azúcar glass.", 21000, True),
-        ("015", "Mini Donas x7", "Mini Donas", "Siete mini donas recién horneadas. Incluye 1 salsa y toppings de la barra.", 15000, True),
-        ("016", "Mini Donas x14", "Mini Donas", "Catorce mini donas para compartir. Incluye 2 salsas y toppings de la barra.", 25000, True),
-        ("017", "Michelada 12 oz", "Bebidas Lab", "Michelada con Sol o Coronita, escarchado de chamoy y Tajín, limón y mezcla especial Súper Lab.", 13000, True),
+        ("015", "Mini Donas x7", "Mini Donas", "Siete mini donas recién horneadas. Incluye 3 toppings y 2 salsas.", 15000, True),
+        ("016", "Mini Donas x14", "Mini Donas", "Catorce mini donas para compartir. Incluye 5 toppings y 3 salsas.", 25000, True),
+        ("017", "Michelada 12 oz", "Bebidas Lab", "Michelada preparada solo con Coronita, escarchado de chamoy y Tajín, limón y mezcla especial Súper Lab.", 13000, True),
         ("018", "Fórmula X 8 ml", "Adicionales", "Potenciador opcional de 8 ml para dar un toque extra de sabor.", 3000, False),
         ("019", "Fórmula X Max 20 ml", "Adicionales", "Potenciador opcional de 20 ml para dar un toque extra de sabor.", 5000, False),
     ]
@@ -1017,7 +1025,7 @@ def seed(db):
         "019": "018.png",
     }
     existing_products = {row.sku: row for row in db.scalars(select(Product).where(Product.sku.is_not(None))).all()}
-    catalog_version = "2026-07-definitive-menu-images-v1"
+    catalog_version = "2026-07-menu-rules-bowl-donas-v2"
     version_setting = db.get(AppSetting, "catalog_version")
     apply_catalog = not version_setting or version_setting.value != catalog_version
     for code, name, category_name, description, price, customizable in catalog_products:

@@ -52,6 +52,21 @@ def test_login_and_seeded_catalog(client):
     assert by_sku["017"]["price"] == 13000
     assert by_sku["019"]["name"] == "Fórmula X Max 20 ml"
     assert by_sku["019"]["price"] == 5000
+    toppings = response.get_json()["toppings"]
+    by_group = {}
+    for topping in toppings:
+        if topping["available"]:
+            by_group.setdefault(topping["group"], set()).add(topping["name"])
+    assert by_group["Frutas"] == {
+        "Mango dulce", "Mango biche", "Manzana", "Sandía", "Piña", "Kiwi", "Cereza",
+        "Fresa", "Uva", "Maracuyá", "Lulo", "Mora", "Uva verde", "Durazno",
+    }
+    assert by_group["Salsas"] == {
+        "Leche Condensada", "Salsa de Caramelo", "Salsa de Chamoy",
+        "Salsa de Chocolate", "Salsa de Fresa", "Salsa de Piña",
+    }
+    assert by_group["Adicionales sin costo"] == {"Tajín", "Pimienta", "Sal"}
+    assert by_group["Cervezas"] == {"Coronita"}
 
 
 def test_database_health_and_admin_diagnostics(client):
@@ -140,6 +155,23 @@ def test_legacy_formula_is_rejected(client):
     })
     assert response.status_code == 400
     assert "anteriores" in response.get_json()["error"]
+
+
+def test_formula_x_is_only_for_drinks(client):
+    login(client)
+    catalog = client.get("/api/catalog").get_json()
+    bowl = next(product for product in catalog["products"] if product["sku"] == "010")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "held",
+        "items": [{
+            "product_id": bowl["id"],
+            "quantity": 1,
+            "modifiers": [{"code": "booster_8"}],
+        }],
+    })
+    assert response.status_code == 400
+    assert "solo se puede agregar a bebidas" in response.get_json()["error"]
 
 
 def test_tablet_order_reaches_worker_command_queue(client):
