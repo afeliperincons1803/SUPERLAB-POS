@@ -30,3 +30,6 @@
 .booster-step{background:#f4f7ff;border-color:#cbd9fa}
 .custom-note small{color:var(--muted);font-size:9px;font-weight:500}
 @media(max-width:700px){.customizer-product-head{grid-template-columns:100px 1fr;gap:13px}.customizer-product-head img{width:100px;height:100px}.custom-flow{flex-wrap:wrap}}
+.sticky-actions{position:sticky;bottom:-28px;z-index:6;margin:18px -28px -28px;padding:14px 28px;background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 22px rgba(21,35,63,.08);backdrop-filter:blur(8px)}
+.checkout-ready{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0;padding:10px 12px;border-radius:10px;background:#eaf8f1;color:#198754;font-size:10px;font-weight:800}.checkout-ready small{color:#5f6c64;font-weight:600;text-align:right}
+@media(max-width:700px){.sticky-actions{bottom:-28px}.sticky-actions .button{flex:1}.checkout-ready{align-items:flex-start;flex-direction:column}.checkout-ready small{text-align:left}}
