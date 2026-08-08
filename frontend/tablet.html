@@ -28,8 +28,8 @@
     <div class="tablet-brand"><span class="brand-mark">S<span>✦</span></span><div><strong>SUPERLAB</strong><small>CREA TU EXPERIMENTO</small></div></div>
     <div class="tablet-progress"><span>1. Elige</span><span>2. Personaliza</span><span>3. Confirma</span></div>
     <div class="tablet-header-actions">
-      <button id="lock-tablet" class="tablet-lock-button" title="Cerrar la sesión de pedidos">Bloquear</button>
-      <button id="open-cart" class="tablet-cart-button">Mi pedido <strong id="cart-count">0</strong></button>
+      <button id="lock-tablet" type="button" class="tablet-lock-button" title="Cerrar la sesión de pedidos">Bloquear</button>
+      <button id="open-cart" type="button" class="tablet-cart-button">Mi pedido <strong id="cart-count">0</strong></button>
     </div>
   </header>
 
@@ -48,20 +48,20 @@
     </section>
 
     <aside id="tablet-cart" class="tablet-cart">
-      <div class="tablet-cart-head"><div><p class="eyebrow">TU PEDIDO</p><h2>Resumen</h2></div><button id="close-cart" aria-label="Cerrar">×</button></div>
+      <div class="tablet-cart-head"><div><p class="eyebrow">TU PEDIDO</p><h2>Resumen</h2></div><div class="tablet-cart-head-actions"><button id="clear-tablet-cart" type="button">Vaciar pedido</button><button id="close-cart" type="button" aria-label="Cerrar">×</button></div></div>
       <div id="tablet-cart-lines" class="tablet-cart-lines"></div>
       <div class="tablet-customer">
         <label>Nombre para llamar tu pedido<input id="customer-name" maxlength="40" placeholder="Escribe tu nombre"></label>
         <label>Nota general <span class="voice-field"><input id="tablet-order-note" maxlength="180" placeholder="Ej. todo para llevar"><button type="button" class="voice-button" data-voice-target="#tablet-order-note" aria-label="Dictar nota">🎙 Hablar</button></span></label>
       </div>
       <div class="tablet-total"><span>Total estimado</span><strong id="tablet-total">$ 0</strong></div>
-      <button id="send-tablet-order" class="button primary wide">Enviar pedido a preparación</button>
+      <button id="send-tablet-order" type="button" class="button primary wide">Enviar pedido a preparación</button>
       <small class="tablet-payment-note">El pago se confirma con el personal de la tienda.</small>
     </aside>
   </main>
   </div>
 
-  <div id="tablet-modal" class="modal" aria-hidden="true"><div class="modal-card tablet-modal-card"><button class="modal-close" aria-label="Cerrar">×</button><div id="tablet-modal-body"></div></div></div>
+  <div id="tablet-modal" class="modal" aria-hidden="true"><div class="modal-card tablet-modal-card"><button type="button" class="modal-close" data-close-tablet-modal aria-label="Cerrar">×</button><div id="tablet-modal-body"></div></div></div>
   <div id="tablet-toast"></div>
   <script src="/static/tablet.js"></script>
 </body>
