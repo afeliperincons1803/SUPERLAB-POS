@@ -30,43 +30,57 @@ def test_login_and_seeded_catalog(client):
     response = client.get("/api/catalog")
     assert response.status_code == 200
     products = response.get_json()["products"]
-    assert len(products) == 19
+    assert len(products) == 28
     by_sku = {product["sku"]: product for product in products}
     assert by_sku["001"]["name"] == "Granizado Lab 9 oz"
-    assert by_sku["001"]["price"] == 12000
+    assert by_sku["001"]["price"] == 13000
     assert by_sku["002"]["name"] == "Granizado Lab 12 oz"
-    assert by_sku["002"]["price"] == 15000
-    assert by_sku["003"]["name"] == "Raspado Lab 9 oz"
-    assert by_sku["003"]["price"] == 8000
-    assert by_sku["004"]["name"] == "Smoothie Lab 16 oz"
+    assert by_sku["002"]["price"] == 13000
+    assert by_sku["003"]["name"] == "Sundae Lab"
+    assert by_sku["003"]["price"] == 13000
+    assert by_sku["004"]["name"] == "Smoothie Lab"
     assert by_sku["004"]["price"] == 16000
     assert by_sku["010"]["name"] == "Bowl Lab"
     assert by_sku["010"]["price"] == 20000
     assert by_sku["011"]["name"] == "Bandeja Lab"
-    assert by_sku["011"]["price"] == 35000
-    assert by_sku["012"]["name"] == "Crepa de Carne"
-    assert by_sku["012"]["price"] == 21000
+    assert by_sku["011"]["price"] == 30000
+    assert by_sku["012"]["name"] == "Crepa de Res"
+    assert by_sku["012"]["price"] == 22000
     assert by_sku["015"]["name"] == "Mini Donas x7"
-    assert by_sku["015"]["price"] == 15000
-    assert by_sku["017"]["name"] == "Michelada 12 oz"
-    assert by_sku["017"]["price"] == 13000
-    assert by_sku["019"]["name"] == "Fórmula X Max 20 ml"
-    assert by_sku["019"]["price"] == 5000
+    assert by_sku["015"]["price"] == 7000
+    assert by_sku["017"]["name"] == "Michelada Clásica Mexicana"
+    assert by_sku["017"]["price"] == 15000
+    assert by_sku["018"]["name"] == "Michelada Dulce"
+    assert by_sku["018"]["price"] == 15000
+    assert by_sku["019"]["name"] == "Malteada Unicornio"
+    assert by_sku["019"]["price"] == 15000
+    assert by_sku["020"]["name"] == "Rosa Tamarindo"
+    assert by_sku["020"]["price"] == 10000
+    assert by_sku["023"]["name"] == "Zona Creativa · Pieza pequeña"
+    assert by_sku["023"]["price"] == 14000
+    assert by_sku["026"]["name"] == "Helados caseros Arazá"
+    assert by_sku["026"]["price"] is None
+    assert by_sku["027"]["name"] == "Fórmula Estrella del Mes"
+    assert by_sku["027"]["price"] is None
+    assert by_sku["028"]["name"] == "Michelada Sin Licor"
+    assert by_sku["028"]["price"] == 10000
+    assert all(by_sku[f"{index:03d}"]["image_url"].endswith(f"/{index:03d}-pos.webp") for index in range(1, 29))
     toppings = response.get_json()["toppings"]
     by_group = {}
     for topping in toppings:
         if topping["available"]:
             by_group.setdefault(topping["group"], set()).add(topping["name"])
     assert by_group["Frutas"] == {
-        "Mango dulce", "Mango biche", "Manzana", "Sandía", "Piña", "Kiwi", "Cereza",
-        "Fresa", "Uva", "Maracuyá", "Lulo", "Mora", "Uva verde", "Durazno",
+        "Arándanos", "Cereza", "Frambuesa", "Fresa", "Kiwi", "Melón", "Mora",
+        "Piña", "Tomate de árbol", "Uva",
     }
     assert by_group["Salsas"] == {
         "Leche Condensada", "Salsa de Caramelo", "Salsa de Chamoy",
         "Salsa de Chocolate", "Salsa de Fresa", "Salsa de Piña",
     }
     assert by_group["Adicionales sin costo"] == {"Tajín", "Pimienta", "Sal"}
-    assert by_group["Cervezas"] == {"Coronita"}
+    assert by_group["Cervezas"] == {"Sol", "Coronita"}
+    assert by_group["Boosters Lab"] == {"Chamoy booster", "Leche Condensada booster", "Licor booster"}
 
 
 def test_database_health_and_admin_diagnostics(client):
@@ -83,7 +97,7 @@ def test_database_health_and_admin_diagnostics(client):
     data = status.get_json()
     assert data["connected"] is True
     assert data["persistent"] is False
-    assert data["counts"]["products"] == 19
+    assert data["counts"]["products"] == 28
 
 
 def test_supabase_url_is_normalized_with_psycopg_and_ssl():
@@ -126,18 +140,18 @@ def test_priced_modifiers_are_added_to_order_total(client):
     response = client.post("/api/orders", json={
         "status": "paid",
         "payment_method": "cash",
-        "received": 15000,
+        "received": 16000,
         "items": [{
             "product_id": granizado["id"],
             "quantity": 1,
-            "toppings": ["Elige 2 toppings: Gomitas"],
+            "toppings": ["Elige 3 ingredientes: Gomitas, Fresa, Oreo"],
             "modifiers": [{"code": "booster_8"}],
         }],
     })
     assert response.status_code == 201
     order = response.get_json()["order"]
-    assert order["total"] == 15000
-    assert order["items"][0]["unit_price"] == 15000
+    assert order["total"] == 16000
+    assert order["items"][0]["unit_price"] == 16000
 
 
 def test_legacy_formula_is_rejected(client):
@@ -154,10 +168,10 @@ def test_legacy_formula_is_rejected(client):
         }],
     })
     assert response.status_code == 400
-    assert "anteriores" in response.get_json()["error"]
+    assert "anterior" in response.get_json()["error"]
 
 
-def test_formula_x_is_only_for_drinks(client):
+def test_booster_is_only_for_compatible_drinks(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
     bowl = next(product for product in catalog["products"] if product["sku"] == "010")
@@ -171,7 +185,27 @@ def test_formula_x_is_only_for_drinks(client):
         }],
     })
     assert response.status_code == 400
-    assert "solo se puede agregar a bebidas" in response.get_json()["error"]
+    assert "solo se pueden agregar a bebidas" in response.get_json()["error"]
+
+
+def test_mocktail_with_liquor_adds_five_thousand(client):
+    login(client)
+    catalog = client.get("/api/catalog").get_json()
+    mocktail = next(product for product in catalog["products"] if product["sku"] == "020")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "paid",
+        "payment_method": "cash",
+        "received": 15000,
+        "items": [{
+            "product_id": mocktail["id"],
+            "quantity": 1,
+            "toppings": ["Versión: Con licor"],
+            "modifiers": [{"code": "with_liquor"}],
+        }],
+    })
+    assert response.status_code == 201
+    assert response.get_json()["order"]["total"] == 15000
 
 
 def test_tablet_order_reaches_worker_command_queue(client):
@@ -218,7 +252,7 @@ def test_worker_cannot_access_admin(client):
 def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
-    assert len(catalog["products"]) == 19
+    assert len(catalog["products"]) == 28
     assert all(product["sku"].isdigit() for product in catalog["products"])
     assert client.post("/api/products", json={
         "name": "Código inválido", "category_id": 1, "sku": "ABC-15",
@@ -229,7 +263,7 @@ def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     product_id = catalog["products"][0]["id"]
     assert client.delete(f"/api/products/{product_id}").status_code == 200
     remaining = client.get("/api/catalog").get_json()["products"]
-    assert len(remaining) == 18
+    assert len(remaining) == 27
 
 
 def test_inventory_alerts_allow_zero_stock(client):

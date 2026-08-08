@@ -165,12 +165,12 @@ class OrderItem(Base):
 
 
 PRICED_MODIFIERS = {
-    "Fórmula X 8 ml": Decimal(3000),
-    "Fórmula X Max 20 ml": Decimal(5000),
+    "Booster Lab": Decimal(3000),
+    "Con licor": Decimal(5000),
 }
 PRICED_MODIFIER_CODES = {
-    "booster_8": ("Fórmula X 8 ml", Decimal(3000)),
-    "booster_20": ("Fórmula X Max 20 ml", Decimal(5000)),
+    "booster_8": ("Booster Lab", Decimal(3000)),
+    "with_liquor": ("Con licor", Decimal(5000)),
 }
 
 
@@ -868,13 +868,16 @@ def validate_modifier_eligibility(product, raw):
         for modifier in raw.get("modifiers", [])
         if isinstance(modifier, dict)
     }
-    formula_codes = {"formula_1", "formula_2", "formula_3", "formula_x"}
-    booster_codes = {"booster_8", "booster_20"}
+    formula_codes = {"formula_1", "formula_2", "formula_3", "formula_x", "booster_20"}
+    booster_codes = {"booster_8"}
+    liquor_codes = {"with_liquor"}
     if codes & formula_codes:
-        raise ValueError("Las fórmulas anteriores ya no están disponibles en la carta")
-    formula_x_skus = {f"{number:03d}" for number in range(1, 10)} | {"017"}
-    if codes & booster_codes and str(product.sku) not in formula_x_skus:
-        raise ValueError("La Fórmula X solo se puede agregar a bebidas, granizados, experimentos y micheladas")
+        raise ValueError("Esa adición anterior ya no está disponible en la carta")
+    booster_skus = {"001", "002", "004", "005", "006", "007", "008", "009", "019"}
+    if codes & booster_codes and str(product.sku) not in booster_skus:
+        raise ValueError("Los boosters solo se pueden agregar a bebidas compatibles")
+    if codes & liquor_codes and str(product.sku) not in {"020", "021", "022"}:
+        raise ValueError("La opción con licor solo está disponible en los Mocktails Lab")
 
 
 def seed(db):
@@ -905,12 +908,13 @@ def seed(db):
 
     category_specs = [
         ("Granizados Lab", "#E8450A", "🧪"),
+        ("Helados y Frappés", "#F97316", "🍦"),
         ("Bebidas Lab", "#2E6BE6", "🥤"),
-        ("Experimentos", "#F97316", "⚗"),
-        ("Bowl y Bandeja", "#8B5CF6", "🥣"),
+        ("Frutas Lab", "#65A30D", "🥝"),
         ("Crepas Lab", "#EA580C", "◒"),
         ("Mini Donas", "#F59E0B", "◉"),
-        ("Adicionales", "#64748B", "✦"),
+        ("Micheladas y Mocktails", "#7C3AED", "✦"),
+        ("Experiencias", "#1D4ED8", "✧"),
     ]
     existing_categories = {row.name: row for row in db.scalars(select(Category)).all()}
     desired_categories = {name for name, _color, _icon in category_specs}
@@ -928,8 +932,9 @@ def seed(db):
         category.active = True
 
     topping_specs = {
-        "Frutas": ["Mango dulce", "Mango biche", "Manzana", "Sandía", "Piña", "Kiwi", "Cereza", "Fresa", "Uva", "Maracuyá", "Lulo", "Mora", "Uva verde", "Durazno"],
-        "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Frutos Cítricos", "Smoothie Sandía", "Smoothie Mango"],
+        # Conserva la selección de frutas que ya está activa en Supabase.
+        "Frutas": ["Arándanos", "Cereza", "Frambuesa", "Fresa", "Kiwi", "Melón", "Mora", "Piña", "Tomate de árbol", "Uva"],
+        "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Sandía & Mango"],
         "Siropes": ["Sirope Fresa", "Sirope Mora Azul", "Sirope Mango", "Sirope Maracuyá", "Sirope Cereza", "Sirope Uva", "Sirope Limón"],
         "Dulces": ["Gomitas Osito", "Gomitas Agrias", "Malvaviscos", "Chocolatinas", "Chispas de Colores"],
         "Crunch": ["Galleta Oreo", "Granola", "Cereal Colorido", "Coco Rallado", "Maní"],
@@ -939,8 +944,9 @@ def seed(db):
         "Sales": ["Sales dulces", "Sales picantes", "Miguelito"],
         "Paletas": ["Paleta dulce", "Paleta ácida"],
         "Proteínas": ["Pollo", "Carne", "Proyecto libre", "Dulce"],
-        "Boosters Lab": ["Chocolate booster", "Licor booster", "Chamoy booster", "Leche Condensada booster", "Sirope booster"],
-        "Cervezas": ["Coronita"],
+        # El sufijo mantiene nombres únicos en la base; la tablet lo oculta al cliente.
+        "Boosters Lab": ["Chamoy booster", "Leche Condensada booster", "Licor booster"],
+        "Cervezas": ["Sol", "Coronita"],
     }
     existing_toppings = {row.name: row for row in db.scalars(select(Topping)).all()}
     for group, names in topping_specs.items():
@@ -983,49 +989,67 @@ def seed(db):
 
     db.flush()
     catalog_products = [
-        ("001", "Granizado Lab 9 oz", "Granizados Lab", "Granizado preparado con el Experimento del Día. Incluye 2 toppings, 1 paleta y 1 salsa del laboratorio.", 12000, True),
-        ("002", "Granizado Lab 12 oz", "Granizados Lab", "Granizado con el Experimento del Día. Incluye 3 toppings, 1 paleta y 1 salsa del laboratorio.", 15000, True),
-        ("003", "Raspado Lab 9 oz", "Bebidas Lab", "Hielo raspado con Fórmula Frutal, 1 salsa del laboratorio o leche condensada y 1 paleta.", 8000, True),
-        ("004", "Smoothie Lab 16 oz", "Bebidas Lab", "Fruta fresca licuada al momento. Incluye 3 toppings de frutas o dulces y 1 salsa.", 16000, True),
-        ("005", "Soda Lab 16 oz", "Bebidas Lab", "Bebida gasificada preparada con Bretaña y Fórmula Frutal.", 12000, True),
-        ("006", "Chamoyada 16 oz", "Experimentos", "Mango, hielo, chamoy y un toque enchilado.", 15000, True),
-        ("007", "Mangonada 16 oz", "Experimentos", "Mango, chamoy y hielo para una mezcla dulce, ácida y picante.", 15000, True),
-        ("008", "Maracumango 16 oz", "Experimentos", "Combinación de mango y maracuyá.", 15000, True),
-        ("009", "Lulada 16 oz", "Experimentos", "Lulo natural preparado al momento con hielo.", 15000, True),
-        ("010", "Bowl Lab", "Bowl y Bandeja", "Arma tu mezcla con 5 frutas, una base, 3 toppings, salsas del laboratorio y adicionales sin costo.", 20000, True),
-        ("011", "Bandeja Lab", "Bowl y Bandeja", "Bandeja para compartir con 4 frutas premium, toppings, gomitas, salsas y adicionales sin costo.", 35000, True),
-        ("012", "Crepa de Carne", "Crepas Lab", "Crepa artesanal con carne desmechada, ahogado, plátano maduro, queso, pico de gallo y salsa de aguacate.", 21000, True),
-        ("013", "Crepa de Pollo", "Crepas Lab", "Crepa artesanal de pollo, jamón, queso y champiñones con salsa bechamel y cilantro.", 21000, True),
-        ("014", "Crepa Lab Dulce", "Crepas Lab", "Crepa con frutas frescas, Nutella, queso, salsa de chocolate, leche condensada y azúcar glass.", 21000, True),
-        ("015", "Mini Donas x7", "Mini Donas", "Siete mini donas recién horneadas. Incluye 3 toppings y 2 salsas.", 15000, True),
-        ("016", "Mini Donas x14", "Mini Donas", "Catorce mini donas para compartir. Incluye 5 toppings y 3 salsas.", 25000, True),
-        ("017", "Michelada 12 oz", "Bebidas Lab", "Michelada preparada solo con Coronita, escarchado de chamoy y Tajín, limón y mezcla especial Súper Lab.", 13000, True),
-        ("018", "Fórmula X 8 ml", "Adicionales", "Potenciador opcional de 8 ml para dar un toque extra de sabor.", 3000, False),
-        ("019", "Fórmula X Max 20 ml", "Adicionales", "Potenciador opcional de 20 ml para dar un toque extra de sabor.", 5000, False),
+        ("001", "Granizado Lab 9 oz", "Granizados Lab", "Sabor de temporada. Incluye 3 ingredientes de la barra, 1 salsa y 1 paleta.", 13000, True),
+        ("002", "Granizado Lab 12 oz", "Granizados Lab", "Sabor de temporada. Incluye 3 ingredientes de la barra, 1 salsa y 1 paleta.", 13000, True),
+        ("003", "Sundae Lab", "Helados y Frappés", "Helado soft con salsa artesanal, 3 toppings y frutas frescas.", 13000, True),
+        ("004", "Smoothie Lab", "Bebidas Lab", "Batido de fruta natural. Incluye toppings asignados de acuerdo con el sabor.", 16000, True),
+        ("005", "Soda Italiana Lab", "Bebidas Lab", "Refrescante y preparada al momento. Elige uno de los tres sabores de la carta.", 14000, True),
+        ("006", "Frappé de Café", "Helados y Frappés", "Con crema chantilly, salsa de chocolate o caramelo y barquillo.", 13000, True),
+        ("007", "Frappé de Milo", "Helados y Frappés", "Con crema chantilly, salsa de chocolate o caramelo y barquillo.", 13000, True),
+        ("008", "Lulada Lab", "Bebidas Lab", "Lulo fresco, leche condensada y el toque especial del laboratorio.", 15000, True),
+        ("009", "Chamoyada Lab", "Bebidas Lab", "Elige mango, fresa o sandía con chamoy y toque enchilado.", 15000, True),
+        ("010", "Bowl Lab", "Frutas Lab", "5 frutas de la barra, 1 salsa, 3 toppings y acabado dulce o picante.", 20000, True),
+        ("011", "Bandeja Lab", "Frutas Lab", "Para compartir: 4 frutas, 1 salsa, 4 toppings y acabado a tu gusto.", 30000, True),
+        ("012", "Crepa de Res", "Crepas Lab", "Carne desmechada, queso, lechuga, pico de gallo, plátano maduro y cilantro.", 22000, False),
+        ("013", "Crepa de Pollo", "Crepas Lab", "Pollo con champiñones en salsa bechamel, queso y cilantro.", 22000, False),
+        ("014", "Crepa Dulce", "Crepas Lab", "Nutella, banano, fresa, arándanos, queso, chocolate Hershey's y leche condensada.", 22000, False),
+        ("015", "Mini Donas x7", "Mini Donas", "Siete mini donas crujientes, dulces y preparadas para acompañar tu mix.", 7000, False),
+        ("016", "Mini Donas x15", "Mini Donas", "Quince mini donas crujientes, dulces y preparadas para compartir.", 15000, False),
+        ("017", "Michelada Clásica Mexicana", "Micheladas y Mocktails", "Chamoy con Tajín, limón fresco y banderita de tamarindo. Elige cerveza, picante y frutas.", 15000, True),
+        ("018", "Michelada Dulce", "Micheladas y Mocktails", "Limón fresco, escarchado premium de mora azul y gomitas. Elige cerveza y familia de frutas.", 15000, True),
+        ("019", "Malteada Unicornio", "Helados y Frappés", "Malteada de chicle con algodón de azúcar, crema y toppings de colores.", 15000, True),
+        ("020", "Rosa Tamarindo", "Micheladas y Mocktails", "Lychee, sandía, perlas de frutos rojos y escarchado de fresa. Con licor añade Smirnoff Tamarindo.", 10000, True),
+        ("021", "Blue Experimental", "Micheladas y Mocktails", "Blueberries, soda, perlas, gomitas y mora azul. Con licor añade vodka.", 10000, True),
+        ("022", "Paloma Lab", "Micheladas y Mocktails", "Sprite, limón y escarchado de mango. Con licor añade tequila.", 10000, True),
+        ("023", "Zona Creativa · Pieza pequeña", "Experiencias", "Incluye pinceles y pinturas. Disfrútala aquí o llévala a casa.", 14000, False),
+        ("024", "Zona Creativa · Pieza mediana", "Experiencias", "Incluye pinceles y pinturas. Disfrútala aquí o llévala a casa.", 20000, False),
+        ("025", "Zona Creativa · Pieza grande", "Experiencias", "Incluye pinceles y pinturas. Disfrútala aquí o llévala a casa.", 26000, False),
+        ("026", "Helados caseros Arazá", "Helados y Frappés", "Helados caseros 100% de fruta. Ocho sabores publicados; precio por confirmar.", None, False),
+        ("027", "Fórmula Estrella del Mes", "Experiencias", "Producto misterioso que cambia cada mes. Fórmula y precio por confirmar.", None, False),
+        ("028", "Michelada Sin Licor", "Micheladas y Mocktails", "Canada Dry, limón fresco, escarchado premium y banderita de tamarindo.", 10000, True),
     ]
     imported_product_images = {
-        "001": "001-menu.webp",
-        "002": "002-menu.webp",
-        "003": "003-menu.webp",
-        "004": "004-menu.webp",
-        "005": "005-menu.webp",
-        "006": "006-menu.webp",
-        "007": "007-menu.webp",
-        "008": "008-menu.webp",
-        "009": "009-menu.webp",
-        "010": "010-menu.webp",
-        "011": "011-menu.webp",
-        "012": "012-menu.webp",
-        "013": "013-menu.webp",
-        "014": "014-menu.webp",
-        "015": "015-menu.webp",
-        "016": "016-menu.webp",
-        "017": "017-menu.webp",
-        "018": "014.png",
-        "019": "018.png",
+        "001": "001-pos.webp",
+        "002": "002-pos.webp",
+        "003": "003-pos.webp",
+        "004": "004-pos.webp",
+        "005": "005-pos.webp",
+        "006": "006-pos.webp",
+        "007": "007-pos.webp",
+        "008": "008-pos.webp",
+        "009": "009-pos.webp",
+        "010": "010-pos.webp",
+        "011": "011-pos.webp",
+        "012": "012-pos.webp",
+        "013": "013-pos.webp",
+        "014": "014-pos.webp",
+        "015": "015-pos.webp",
+        "016": "016-pos.webp",
+        "017": "017-pos.webp",
+        "018": "018-pos.webp",
+        "019": "019-pos.webp",
+        "020": "020-pos.webp",
+        "021": "021-pos.webp",
+        "022": "022-pos.webp",
+        "023": "023-pos.webp",
+        "024": "024-pos.webp",
+        "025": "025-pos.webp",
+        "026": "026-pos.webp",
+        "027": "027-pos.webp",
+        "028": "028-pos.webp",
     }
     existing_products = {row.sku: row for row in db.scalars(select(Product).where(Product.sku.is_not(None))).all()}
-    catalog_version = "2026-07-menu-rules-bowl-donas-v2"
+    catalog_version = "2026-08-superlab-menu-v3-pos-caja"
     version_setting = db.get(AppSetting, "catalog_version")
     apply_catalog = not version_setting or version_setting.value != catalog_version
     for code, name, category_name, description, price, customizable in catalog_products:
@@ -1040,7 +1064,7 @@ def seed(db):
             product.description = description
             image_file = imported_product_images.get(code)
             product.image_url = f"/static/products/{image_file}" if image_file else None
-            product.price = Decimal(price)
+            product.price = Decimal(price) if price is not None else None
             product.available = True
             product.customizable = customizable
             product.deleted_at = None

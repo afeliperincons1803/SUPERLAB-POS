@@ -2,11 +2,28 @@ const tabletState={products:[],categories:[],toppings:[],cart:[],category:'all'}
 const $t=(selector,root=document)=>root.querySelector(selector);
 const $$t=(selector,root=document)=>[...root.querySelectorAll(selector)];
 const money=value=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(Number(value||0)).replace('COP','$');
-const MAIN_SKUS=new Set(['001','002','003','004','005','006','007','008','009','010','011','012','013','014','015','016','017']);
-const POTENCIADORES=[
-  {code:'booster_8',name:'Fórmula X 8 ml',price:3000,image:'/static/products/014.png'},
-  {code:'booster_20',name:'Fórmula X Max 20 ml',price:5000,image:'/static/products/018.png'},
-];
+const MAIN_SKUS=new Set(Array.from({length:28},(_,index)=>String(index+1).padStart(3,'0')));
+const INFORMATION_SKUS=new Set(['026','027']);
+const BOOSTER_SKUS=new Set(['001','002','004','005','006','007','008','009','017','018','019','020','021','022','028']);
+const MOCKTAIL_SKUS=new Set(['020','021','022']);
+const BOOSTER={code:'booster_8',name:'Booster Lab',price:3000};
+const INFORMATION_DETAILS={
+  '026':{
+    eyebrow:'HELADOS CASEROS 100% DE FRUTA',
+    intro:'La carta publica ocho sabores Arazá, pero no indica su precio. Puedes conocerlos aquí, aunque todavía no se pueden agregar al pedido.',
+    items:[
+      ['Amazon','Arazá, mango y piña'],['Palo de Rosa','Guanábana, fresa y mora'],
+      ['Gloria','Arequipe y coco'],['Amor','Mango, banano y guanábana'],
+      ['Dulzura','Banano y mango'],['Diplomático','Fresa, mora, uvas y arándanos'],
+      ['Oasis','Lulo, maracuyá y piña'],['Yoguie','Maracuyá y banano'],
+    ],
+  },
+  '027':{
+    eyebrow:'EL SECRETO DEL LABORATORIO',
+    intro:'Es un producto misterioso que cambia cada mes. La carta no publica la fórmula vigente ni el precio; estará disponible para ordenar cuando el laboratorio los confirme.',
+    items:[],
+  },
+};
 
 async function tabletApi(path,options={}){
   const response=await fetch(path,{credentials:'include',headers:{'Content-Type':'application/json'},...options});
@@ -17,13 +34,14 @@ async function tabletApi(path,options={}){
 function esc(value){const d=document.createElement('div');d.textContent=String(value??'');return d.innerHTML}
 function toastTablet(message,type=''){const n=document.createElement('div');n.className=`tablet-toast ${type}`;n.textContent=message;$t('#tablet-toast').append(n);setTimeout(()=>n.remove(),3200)}
 function group(name){return tabletState.toppings.filter(x=>x.group===name&&x.available).map(x=>x.name)}
-function canUseTabletFormulaX(product){return new Set(['001','002','003','004','005','006','007','008','009','017']).has(String(product.sku||''))}
+function unique(values){return [...new Set(values.filter(Boolean))]}
 
 async function loadTabletApp(){
   const data=await tabletApi('/api/catalog');
-  tabletState.products=data.products.filter(p=>MAIN_SKUS.has(String(p.sku))&&p.available&&p.price!==null);
+  tabletState.products=data.products.filter(p=>MAIN_SKUS.has(String(p.sku))&&p.available).sort((a,b)=>String(a.sku).localeCompare(String(b.sku)));
   tabletState.categories=data.categories.filter(c=>tabletState.products.some(p=>p.category_id===c.id));
   tabletState.toppings=data.toppings;
+  $t('#tablet-catalog-count').textContent=`${tabletState.products.length} creaciones en la carta`;
   $t('#tablet-login').hidden=true;$t('#tablet-app').hidden=false;
   renderTabletCategories();renderTabletProducts();renderTabletCart();
 }
@@ -48,75 +66,139 @@ function bindTablet(){
   document.addEventListener('click',event=>{const button=event.target.closest('[data-voice-target]');if(button)startVoiceDictation(button.dataset.voiceTarget,button)});
 }
 function renderTabletCategories(){
-  $t('#tablet-categories').innerHTML=[{id:'all',name:'Todos'},...tabletState.categories].map(c=>`<button data-category="${c.id}" class="${String(c.id)===String(tabletState.category)?'active':''}">${esc(c.name)}</button>`).join('');
+  const options=[{id:'all',name:'Toda la carta',icon:'✦'},...tabletState.categories];
+  $t('#tablet-categories').innerHTML=options.map(c=>{
+    const count=c.id==='all'?tabletState.products.length:tabletState.products.filter(p=>p.category_id===c.id).length;
+    return `<button data-category="${c.id}" class="${String(c.id)===String(tabletState.category)?'active':''}"><span>${esc(c.icon||'✦')}</span>${esc(c.name)}<small>${count}</small></button>`;
+  }).join('');
 }
 function renderTabletProducts(){
   const products=tabletState.products.filter(p=>tabletState.category==='all'||String(p.category_id)===String(tabletState.category));
-  $t('#tablet-products').innerHTML=products.map(p=>`<button class="tablet-product" data-product="${p.id}">${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" decoding="async">`:''}<div><strong>${esc(p.name)}</strong><small>${esc(p.description||'')}</small><b>${money(p.price)}</b></div></button>`).join('');
+  $t('#tablet-products').innerHTML=products.map(p=>{const informational=INFORMATION_SKUS.has(String(p.sku));return `<button class="tablet-product ${informational?'informational':''}" data-product="${p.id}">
+    <span class="tablet-product-category">${esc(p.category)}</span>
+    ${p.image_url?`<img src="${esc(p.image_url)}" alt="${esc(p.name)}" loading="lazy" decoding="async">`:''}
+    <div><strong>${esc(p.name)}</strong><small>${esc(p.description||'')}</small><footer><b>${p.price===null?'Precio por confirmar':money(p.price)}</b><span>${informational?'Ver información':'Elegir'} →</span></footer></div>
+  </button>`}).join('')||'<div class="tablet-loading">No hay productos disponibles en esta categoría.</div>';
   $$t('[data-product]').forEach(b=>b.onclick=()=>selectTabletProduct(Number(b.dataset.product)));
 }
 function baseSections(sku){
-  const fruits=group('Frutas'),sauces=group('Salsas'),freeAdds=group('Adicionales sin costo'),sweets=[...group('Dulces'),...group('Crunch'),...group('Perlas')];
+  const fruits=group('Frutas');
+  const sauces=group('Salsas');
+  const toppings=unique([...group('Dulces'),...group('Crunch'),...group('Perlas')]);
+  const bar=unique([...fruits,...toppings]);
+  const finish=['Dulce','Picante','Combinar dulce y picante'];
   return ({
-    '001':[{title:'Elige los 2 toppings incluidos',max:2,min:2,options:sweets},{title:'Elige la salsa incluida',max:1,min:1,options:sauces},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
-    '002':[{title:'Elige los 3 toppings incluidos',max:3,min:3,options:sweets},{title:'Elige la salsa incluida',max:1,min:1,options:sauces},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
-    '003':[{title:'Elige la Fórmula Frutal',max:1,min:1,options:fruits},{title:'Elige salsa o leche condensada',max:1,min:1,options:[...sauces,'Leche Condensada']},{title:'Elige la paleta incluida',max:1,min:1,options:group('Paletas')}],
-    '004':[{title:'Elige el sabor del smoothie',max:1,min:1,options:group('Sabores smoothie')},{title:'Elige 3 toppings de frutas o dulces',max:3,min:3,options:[...fruits,...sweets]},{title:'Elige 1 salsa',max:1,min:1,options:sauces}],
-    '005':[{title:'Elige la Fórmula Frutal',max:1,min:1,options:fruits}],
-    '010':[{title:'Elige 5 frutas',max:5,min:5,options:fruits},{title:'Elige la base',max:1,min:1,options:['Yogur','Crema de Leche','Chamoy']},{title:'Elige 3 toppings',max:3,min:3,options:sweets},{title:'Elige hasta 2 salsas',max:2,min:1,options:sauces},{title:'Adicionales sin costo',max:3,min:0,options:freeAdds}],
-    '011':[{title:'Elige 4 frutas premium',max:4,min:4,options:fruits},{title:'Elige hasta 3 toppings y gomitas',max:3,min:1,options:sweets},{title:'Elige hasta 2 salsas',max:2,min:1,options:sauces},{title:'Adicionales sin costo',max:3,min:0,options:freeAdds}],
-    '015':[{title:'Elige 3 toppings',max:3,min:3,options:sweets},{title:'Elige 2 salsas',max:2,min:2,options:sauces}],
-    '016':[{title:'Elige 5 toppings',max:5,min:5,options:sweets},{title:'Elige 3 salsas',max:3,min:3,options:sauces}],
-    '017':[{title:'Elige la cerveza',max:1,min:1,options:group('Cervezas')}],
+    '001':[{title:'Elige 3 ingredientes de la barra',min:3,max:3,options:bar},{title:'Elige 1 salsa',min:1,max:1,options:sauces},{title:'Elige 1 paleta',min:1,max:1,options:group('Paletas')}],
+    '002':[{title:'Elige 3 ingredientes de la barra',min:3,max:3,options:bar},{title:'Elige 1 salsa',min:1,max:1,options:sauces},{title:'Elige 1 paleta',min:1,max:1,options:group('Paletas')}],
+    '003':[{title:'Elige el sabor del helado',min:1,max:1,options:['Chocolate','Frutos Rojos','Frutos Amarillos']},{title:'Elige 1 salsa artesanal',min:1,max:1,options:sauces},{title:'Elige 3 toppings',min:3,max:3,options:toppings}],
+    '004':[{title:'Elige el sabor del smoothie',min:1,max:1,options:group('Sabores smoothie')}],
+    '005':[{title:'Elige el sabor de la soda',min:1,max:1,options:['Frutos Amarillos','Frutos Rojos','Liche y Mora Azul']}],
+    '006':[{title:'Elige la salsa',min:1,max:1,options:['Salsa de Chocolate','Salsa de Caramelo']}],
+    '007':[{title:'Elige la salsa',min:1,max:1,options:['Salsa de Chocolate','Salsa de Caramelo']}],
+    '009':[{title:'Elige el sabor de tu chamoyada',min:1,max:1,options:['Mango','Fresa','Sandía']}],
+    '010':[{title:'Elige 5 frutas de la barra',min:5,max:5,options:fruits},{title:'Elige 1 salsa',min:1,max:1,options:sauces},{title:'Elige 3 toppings',min:3,max:3,options:toppings},{title:'¿Cómo la terminamos?',min:1,max:1,options:finish}],
+    '011':[{title:'Elige 4 frutas de la barra',min:4,max:4,options:fruits},{title:'Elige 1 salsa',min:1,max:1,options:sauces},{title:'Elige 4 toppings',min:4,max:4,options:toppings},{title:'¿Cómo la terminamos?',min:1,max:1,options:finish}],
+    '017':[{title:'Elige la cerveza',min:1,max:1,options:group('Cervezas')},{title:'Indica el nivel de picante',kind:'text',min:1,max:1,placeholder:'Escribe cómo la prefieres'},{title:'Elige tus frutas favoritas',min:0,max:fruits.length,options:fruits,optional:true}],
+    '018':[{title:'Elige la cerveza',min:1,max:1,options:group('Cervezas')},{title:'Elige la familia de frutas',min:1,max:1,options:['Frutos Rojos','Frutos Amarillos']}],
+    '020':[{title:'Elige tu versión',min:1,max:1,options:['Sin licor','Con licor + $5.000']}],
+    '021':[{title:'Elige tu versión',min:1,max:1,options:['Sin licor','Con licor + $5.000']}],
+    '022':[{title:'Elige tu versión',min:1,max:1,options:['Sin licor','Con licor + $5.000']}],
+    '028':[{title:'Indica el sabor',kind:'text',min:1,max:1,placeholder:'Escribe el sabor disponible que prefieres'},{title:'Elige el escarchado premium',min:1,max:1,options:['Picante','Dulce']},{title:'Elige tus frutas favoritas',min:0,max:fruits.length,options:fruits,optional:true}],
   })[sku]||[];
 }
 function selectTabletProduct(id){
-  const product=tabletState.products.find(p=>p.id===id),sku=String(product.sku);
-  const sections=baseSections(sku);
-  openTabletCustomizer(product,sections);
+  const product=tabletState.products.find(p=>p.id===id);
+  if(!product)return;
+  if(INFORMATION_SKUS.has(String(product.sku)))openTabletInformation(product);
+  else openTabletCustomizer(product,baseSections(String(product.sku)));
+}
+function openTabletInformation(product){
+  const detail=INFORMATION_DETAILS[String(product.sku)]||{eyebrow:'INFORMACIÓN DE LA CARTA',intro:product.description,items:[]};
+  $t('#tablet-modal-body').innerHTML=`<div class="tablet-info-product">
+    ${product.image_url?`<img src="${esc(product.image_url)}" alt="${esc(product.name)}">`:''}
+    <p class="eyebrow orange">${esc(detail.eyebrow)}</p><h2>${esc(product.name)}</h2><p>${esc(detail.intro)}</p>
+    ${detail.items.length?`<div class="tablet-info-list">${detail.items.map(([name,ingredients])=>`<article><strong>${esc(name)}</strong><span>${esc(ingredients)}</span></article>`).join('')}</div>`:''}
+    <div class="tablet-info-notice"><strong>Precio por confirmar</strong><span>Este artículo todavía no se puede agregar al pedido.</span></div>
+    <button class="button primary" id="close-tablet-info">Volver a la carta</button>
+  </div>`;
+  $t('#tablet-modal').classList.add('open');$t('#tablet-modal').setAttribute('aria-hidden','false');
+  $t('#close-tablet-info').onclick=closeTabletModal;
 }
 function openTabletCustomizer(product,sections){
-  const formulaSection=canUseTabletFormulaX(product)?potentiatorSection():'';
-  $t('#tablet-modal-body').innerHTML=`<p class="eyebrow orange">PERSONALIZA PASO A PASO</p><h2>${esc(product.name)}</h2><p class="muted">${esc(product.description||'')}</p><form id="tablet-custom-form">${sections.map((s,i)=>choiceSection(s,i)).join('')}${formulaSection}<label class="custom-note">Nota para este producto<span class="voice-field"><input id="tablet-product-note" name="product_note" maxlength="120" placeholder="Ej. sin picante o salsa aparte"><button type="button" class="voice-button" data-voice-target="#tablet-product-note">🎙 Hablar</button></span></label><div class="form-actions"><button type="button" class="button secondary" id="cancel-tablet-custom">Cancelar</button><button class="button primary">Agregar a mi pedido</button></div></form>`;
+  const boosterSection=BOOSTER_SKUS.has(String(product.sku))?renderBoosterSection():'';
+  const stepTotal=sections.length+(boosterSection?1:0);
+  $t('#tablet-modal-body').innerHTML=`<div class="tablet-custom-head">
+    ${product.image_url?`<img src="${esc(product.image_url)}" alt="${esc(product.name)}">`:''}
+    <div><p class="eyebrow orange">PERSONALIZA TU EXPERIMENTO</p><h2>${esc(product.name)}</h2><p>${esc(product.description||'')}</p><strong>${money(product.price)}</strong></div>
+  </div><form id="tablet-custom-form" data-product="${product.id}">
+    <div class="custom-progress"><span>Producto elegido</span><span>${stepTotal?`${stepTotal} decisiones`:'Listo para agregar'}</span><span>Revisa tu pedido</span></div>
+    ${sections.map((s,i)=>choiceSection(s,i)).join('')}${boosterSection}
+    <label class="custom-note">¿Necesitas contarnos algo? <small>Opcional</small><span class="voice-field"><input id="tablet-product-note" name="product_note" maxlength="120" placeholder="Ej. sin picante o salsa aparte"><button type="button" class="voice-button" data-voice-target="#tablet-product-note">🎙 Hablar</button></span></label>
+    <div class="custom-sticky"><div><small>Total de este producto</small><strong id="custom-product-total">${money(product.price)}</strong></div><button type="button" class="button secondary" id="cancel-tablet-custom">Cancelar</button><button class="button primary" id="add-custom-product" ${sections.length?'disabled':''}>Agregar a mi pedido</button></div>
+  </form>`;
   $t('#tablet-modal').classList.add('open');$t('#tablet-modal').setAttribute('aria-hidden','false');
   $t('#cancel-tablet-custom').onclick=closeTabletModal;
-  $$t('#tablet-custom-form input').forEach(input=>input.onchange=()=>{enforceTabletLimit(input);if(input.name==='tablet-syringe')renderTabletSyringeFlavor()});
+  $$t('#tablet-custom-form input').forEach(input=>{const refresh=()=>{enforceTabletLimit(input);if(input.name==='tablet-booster')renderTabletBoosterFlavor(product,sections);updateCustomizerState(product,sections)};input.onchange=refresh;if(input.type==='text')input.oninput=refresh});
   $t('#tablet-custom-form').onsubmit=e=>saveTabletCustomization(e,product,sections);
+  updateCustomizerState(product,sections);
 }
 function choiceSection(section,index){
-  return `<section class="tablet-choice-section custom-step" data-max="${section.max}"><h3><span class="tablet-step-number">${index+1}</span>${esc(section.title)} <small>${section.min===section.max?`elige ${section.max}`:`mín. ${section.min} · máx. ${section.max}`}</small></h3><div class="choice-grid">${section.options.map(x=>`<label class="choice-pill"><input type="${section.max===1?'radio':'checkbox'}" name="tablet-step-${index}" value="${esc(x)}"><span>${esc(x)}</span></label>`).join('')}</div></section>`;
+  if(section.kind==='text')return `<section class="tablet-choice-section custom-step" data-step="${index}" data-kind="text" data-min="${section.min}" data-max="${section.max}"><h3><span class="tablet-step-number">${index+1}</span><span>${esc(section.title)}<small class="choice-counter">Pendiente</small></span></h3><input class="tablet-open-choice" name="tablet-step-${index}" maxlength="80" placeholder="${esc(section.placeholder||'Escribe tu elección')}"></section>`;
+  return `<section class="tablet-choice-section custom-step" data-step="${index}" data-min="${section.min}" data-max="${section.max}"><h3><span class="tablet-step-number">${index+1}</span><span>${esc(section.title)}<small class="choice-counter">0 de ${section.max}</small></span></h3><div class="choice-grid">${section.options.map(x=>`<label class="choice-pill"><input type="${section.max===1?'radio':'checkbox'}" name="tablet-step-${index}" value="${esc(x)}"><span>${esc(x)}</span></label>`).join('')}</div></section>`;
 }
-function potentiatorSection(){
-  return `<section class="tablet-choice-section"><h3><span class="tablet-step-number">＋</span>Fórmula X <small>potenciador opcional solo para bebidas</small></h3><p class="tablet-formulas-note">Puedes agregar un toque extra de sabor a tu preparación.</p><div class="choice-grid"><label class="choice-pill"><input type="radio" name="tablet-syringe" value="" checked><span>Sin Fórmula X</span></label>${POTENCIADORES.map(s=>`<label class="choice-pill paid addon-choice"><input type="radio" name="tablet-syringe" value="${s.code}" data-price="${s.price}"><span><img class="tablet-addon-image" src="${s.image}" alt="${esc(s.name)}"><b>${esc(s.name)}</b><small>+ ${money(s.price)}</small></span></label>`).join('')}</div><div id="tablet-syringe-flavor"></div></section>`;
+function renderBoosterSection(){
+  return `<section class="tablet-choice-section booster-section"><h3><span class="tablet-step-number optional">＋</span><span>¿Quieres potenciarla?<small>Booster opcional · + ${money(BOOSTER.price)}</small></span></h3><div class="choice-grid booster-choice"><label class="choice-pill"><input type="radio" name="tablet-booster" value="" checked><span>Sin booster</span></label><label class="choice-pill paid"><input type="radio" name="tablet-booster" value="${BOOSTER.code}"><span><b>Agregar Booster Lab</b><small>+ ${money(BOOSTER.price)}</small></span></label></div><div id="tablet-booster-flavor"></div></section>`;
 }
-function renderTabletSyringeFlavor(){
-  const code=$t('[name="tablet-syringe"]:checked')?.value,target=$t('#tablet-syringe-flavor');
+function renderTabletBoosterFlavor(product,sections){
+  const code=$t('[name="tablet-booster"]:checked')?.value,target=$t('#tablet-booster-flavor');
   if(!target)return;
   if(!code){target.innerHTML='';return}
-  target.innerHTML=`<div class="formula-extra-head"><strong>Elige el sabor de la Fórmula X</strong></div><div class="choice-grid">${group('Boosters Lab').map(v=>`<label class="choice-pill"><input type="radio" name="tablet-syringe-flavor" value="${esc(v)}"><span>${esc(v.replace(' booster',''))}</span></label>`).join('')}</div>`;
+  target.innerHTML=`<div class="booster-flavor"><strong>Elige el booster</strong><div class="choice-grid">${group('Boosters Lab').map(v=>`<label class="choice-pill"><input type="radio" name="tablet-booster-flavor" value="${esc(v)}"><span>${esc(v.replace(' booster',''))}</span></label>`).join('')}</div></div>`;
+  $$t('[name="tablet-booster-flavor"]').forEach(input=>input.onchange=()=>updateCustomizerState(product,sections));
 }
 function enforceTabletLimit(input){
   const section=input.closest('[data-max]');if(!section||input.type!=='checkbox')return;
   const max=Number(section.dataset.max),checked=$$t('input:checked',section);
   if(checked.length>max){input.checked=false;toastTablet(`Puedes elegir máximo ${max}`,'error')}
 }
+function updateCustomizerState(product,sections){
+  let complete=true;
+  sections.forEach((section,index)=>{
+    const block=$t(`[data-step="${index}"]`),isText=section.kind==='text';
+    const count=isText?($t(`[name="tablet-step-${index}"]`)?.value.trim()?1:0):$$t(`[name="tablet-step-${index}"]:checked`).length;
+    const counter=$t('.choice-counter',block);if(counter)counter.textContent=isText?(count?'Listo':'Pendiente'):`${count} de ${section.max}`;
+    block?.classList.toggle('complete',count>=section.min&&count<=section.max);
+    if(count<section.min||count>section.max)complete=false;
+  });
+  const boosterCode=$t('[name="tablet-booster"]:checked')?.value;
+  if(boosterCode&&!$t('[name="tablet-booster-flavor"]:checked'))complete=false;
+  const total=Number(product.price||0)+(boosterCode?BOOSTER.price:0)+((MOCKTAIL_SKUS.has(String(product.sku))&&$t('[name^="tablet-step-"]:checked')?.value?.startsWith('Con licor'))?5000:0);
+  const totalNode=$t('#custom-product-total');if(totalNode){totalNode.textContent=money(total);totalNode.dataset.base=String(product.price||0)}
+  const add=$t('#add-custom-product');if(add)add.disabled=!complete;
+}
 function saveTabletCustomization(event,product,sections){
   event.preventDefault();const labels=[],missing=[];
-  sections.forEach((section,i)=>{const selected=$$t(`[name="tablet-step-${i}"]:checked`).map(x=>x.value);if(selected.length<section.min)missing.push(section.title);if(selected.length>section.max)missing.push(section.title);if(selected.length)labels.push(`${section.title}: ${selected.join(', ')}`)});
-  const modifiers=[],syringeCode=$t('[name="tablet-syringe"]:checked')?.value,syringe=POTENCIADORES.find(s=>s.code===syringeCode);
-  if(syringe){const flavor=$t('[name="tablet-syringe-flavor"]:checked')?.value;if(!flavor)missing.push('Sabor de la Fórmula X');else labels.push(`Sabor de Fórmula X: ${flavor.replace(' booster','')}`);modifiers.push({code:syringe.code,name:syringe.name,price:syringe.price})}
+  sections.forEach((section,index)=>{
+    const selected=section.kind==='text'?[$t(`[name="tablet-step-${index}"]`)?.value.trim()].filter(Boolean):$$t(`[name="tablet-step-${index}"]:checked`).map(x=>x.value);
+    if(selected.length<section.min||selected.length>section.max)missing.push(section.title);
+    if(selected.length)labels.push(`${section.title}: ${selected.join(', ')}`);
+  });
+  const modifiers=[];
+  if(MOCKTAIL_SKUS.has(String(product.sku))&&labels.some(label=>label.includes('Con licor +'))){modifiers.push({code:'with_liquor',name:'Con licor',price:5000})}
+  const boosterCode=$t('[name="tablet-booster"]:checked')?.value;
+  if(boosterCode){const flavor=$t('[name="tablet-booster-flavor"]:checked')?.value;if(!flavor)missing.push('Booster Lab');else labels.push(`Booster Lab: ${flavor.replace(' booster','')}`);modifiers.push({...BOOSTER})}
   const note=new FormData(event.currentTarget).get('product_note');if(note)labels.push(`Nota: ${note}`);
   if(missing.length){toastTablet(`Falta completar: ${missing.join(' · ')}`,'error');return}
   addTabletLine(product,labels,modifiers);closeTabletModal();
 }
 function addTabletLine(product,toppings,modifiers){
-  const price=product.price+modifiers.reduce((sum,x)=>sum+x.price,0);
+  const price=Number(product.price)+modifiers.reduce((sum,x)=>sum+Number(x.price||0),0);
   tabletState.cart.push({product_id:product.id,name:product.name,quantity:1,price,toppings,modifiers});
   renderTabletCart();toastTablet(`${product.name} agregado`);
 }
 function renderTabletCart(){
   $t('#cart-count').textContent=tabletState.cart.reduce((s,x)=>s+x.quantity,0);
-  $t('#tablet-cart-lines').innerHTML=tabletState.cart.length?tabletState.cart.map((x,i)=>`<div class="tablet-cart-line"><div><strong>${x.quantity} × ${esc(x.name)}</strong>${x.toppings.length?`<small>${x.toppings.map(esc).join('<br>')}</small>`:''}</div><div><b>${money(x.price*x.quantity)}</b><button data-remove="${i}">Quitar</button></div></div>`).join(''):'<div class="tablet-empty">Tu pedido está vacío.<br>Elige un producto para comenzar.</div>';
+  $t('#tablet-cart-lines').innerHTML=tabletState.cart.length?tabletState.cart.map((x,i)=>`<div class="tablet-cart-line"><div><strong>${x.quantity} × ${esc(x.name)}</strong>${x.toppings.length?`<small>${x.toppings.map(esc).join('<br>')}</small>`:''}</div><div><b>${money(x.price*x.quantity)}</b><button data-remove="${i}">Quitar</button></div></div>`).join(''):'<div class="tablet-empty"><span>🧪</span><strong>Tu experimento empieza aquí</strong><small>Elige un producto para comenzar.</small></div>';
   $t('#tablet-total').textContent=money(tabletState.cart.reduce((s,x)=>s+x.price*x.quantity,0));
   $t('#send-tablet-order').disabled=!tabletState.cart.length;
   $$t('[data-remove]').forEach(b=>b.onclick=()=>{tabletState.cart.splice(Number(b.dataset.remove),1);renderTabletCart()});
@@ -128,7 +210,7 @@ async function sendTabletOrder(){
     $t('#send-tablet-order').disabled=true;
     const {order}=await tabletApi('/api/tablet/orders',{method:'POST',body:JSON.stringify(payload)});
     tabletState.cart=[];renderTabletCart();$t('#tablet-cart').classList.remove('open');
-    $t('#tablet-modal-body').innerHTML=`<div class="tablet-success"><span>✓</span><h2>¡Pedido enviado!</h2><p>Tu comanda ya apareció en la pantalla del equipo.</p><div class="order-number">${esc(order.number)}</div><p>Espera a que llamen a <strong>${esc(customer)}</strong>.</p><button class="button primary" id="new-tablet-order">Hacer otro pedido</button></div>`;
+    $t('#tablet-modal-body').innerHTML=`<div class="tablet-success"><span>✓</span><p class="eyebrow orange">EXPERIMENTO ENVIADO</p><h2>¡Pedido confirmado!</h2><p>La comanda ya apareció en la pantalla del equipo.</p><div class="order-number">${esc(order.number)}</div><p>Espera a que llamen a <strong>${esc(customer)}</strong>.</p><button class="button primary" id="new-tablet-order">Hacer otro pedido</button></div>`;
     $t('#tablet-modal').classList.add('open');$t('#new-tablet-order').onclick=()=>{closeTabletModal();$t('#customer-name').value='';$t('#tablet-order-note').value=''};
   }catch(error){toastTablet(error.message,'error');$t('#send-tablet-order').disabled=false}
 }
@@ -140,7 +222,6 @@ function startVoiceDictation(selector,button){
   const original=button.textContent;button.textContent='Escuchando…';button.classList.add('listening');
   recognition.onresult=event=>{const spoken=event.results[0][0].transcript.trim();target.value=[target.value.trim(),spoken].filter(Boolean).join('. ');target.dispatchEvent(new Event('input',{bubbles:true}))};
   recognition.onerror=()=>toastTablet('No pude escuchar. Revisa el permiso del micrófono e inténtalo otra vez.','error');
-  recognition.onend=()=>{button.textContent=original;button.classList.remove('listening')};
-  recognition.start();
+  recognition.onend=()=>{button.textContent=original;button.classList.remove('listening')};recognition.start();
 }
 initTablet();
