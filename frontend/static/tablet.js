@@ -60,9 +60,10 @@ function bindTablet(){
   $t('#open-cart').onclick=()=>$t('#tablet-cart').classList.add('open');
   $t('#lock-tablet').onclick=async()=>{await tabletApi('/api/auth/logout',{method:'POST'});tabletState.cart=[];$t('#tablet-app').hidden=true;$t('#tablet-login').hidden=false;$t('#tablet-login-form').reset();renderTabletCart()};
   $t('#close-cart').onclick=()=>$t('#tablet-cart').classList.remove('open');
+  $t('#clear-tablet-cart').onclick=()=>clearTabletCart(true);
   $t('#send-tablet-order').onclick=sendTabletOrder;
-  $t('#tablet-modal').onclick=e=>{if(e.target.id==='tablet-modal')closeTabletModal()};
-  $t('.modal-close').onclick=closeTabletModal;
+  $t('#tablet-modal').onclick=e=>{if(e.target.id==='tablet-modal'||e.target.closest('[data-close-tablet-modal]'))closeTabletModal()};
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$t('#tablet-modal').classList.contains('open'))closeTabletModal()});
   document.addEventListener('click',event=>{const button=event.target.closest('[data-voice-target]');if(button)startVoiceDictation(button.dataset.voiceTarget,button)});
 }
 function renderTabletCategories(){
@@ -196,6 +197,12 @@ function addTabletLine(product,toppings,modifiers){
   tabletState.cart.push({product_id:product.id,name:product.name,quantity:1,price,toppings,modifiers});
   renderTabletCart();toastTablet(`${product.name} agregado`);
 }
+function clearTabletCart(notify=false){
+  const hadItems=tabletState.cart.length>0;
+  tabletState.cart=[];
+  renderTabletCart();
+  if(notify)toastTablet(hadItems?'Pedido vaciado':'Tu pedido ya está vacío',hadItems?'':'error');
+}
 function renderTabletCart(){
   $t('#cart-count').textContent=tabletState.cart.reduce((s,x)=>s+x.quantity,0);
   $t('#tablet-cart-lines').innerHTML=tabletState.cart.length?tabletState.cart.map((x,i)=>`<div class="tablet-cart-line"><div><strong>${x.quantity} × ${esc(x.name)}</strong>${x.toppings.length?`<small>${x.toppings.map(esc).join('<br>')}</small>`:''}</div><div><b>${money(x.price*x.quantity)}</b><button data-remove="${i}">Quitar</button></div></div>`).join(''):'<div class="tablet-empty"><span>🧪</span><strong>Tu experimento empieza aquí</strong><small>Elige un producto para comenzar.</small></div>';
@@ -209,12 +216,12 @@ async function sendTabletOrder(){
   try{
     $t('#send-tablet-order').disabled=true;
     const {order}=await tabletApi('/api/tablet/orders',{method:'POST',body:JSON.stringify(payload)});
-    tabletState.cart=[];renderTabletCart();$t('#tablet-cart').classList.remove('open');
+    clearTabletCart(false);$t('#tablet-cart').classList.remove('open');
     $t('#tablet-modal-body').innerHTML=`<div class="tablet-success"><span>✓</span><p class="eyebrow orange">EXPERIMENTO ENVIADO</p><h2>¡Pedido confirmado!</h2><p>La comanda ya apareció en la pantalla del equipo.</p><div class="order-number">${esc(order.number)}</div><p>Espera a que llamen a <strong>${esc(customer)}</strong>.</p><button class="button primary" id="new-tablet-order">Hacer otro pedido</button></div>`;
     $t('#tablet-modal').classList.add('open');$t('#new-tablet-order').onclick=()=>{closeTabletModal();$t('#customer-name').value='';$t('#tablet-order-note').value=''};
   }catch(error){toastTablet(error.message,'error');$t('#send-tablet-order').disabled=false}
 }
-function closeTabletModal(){$t('#tablet-modal').classList.remove('open');$t('#tablet-modal').setAttribute('aria-hidden','true')}
+function closeTabletModal(){$t('#tablet-modal').classList.remove('open');$t('#tablet-modal').setAttribute('aria-hidden','true');$t('#tablet-modal-body').innerHTML=''}
 function startVoiceDictation(selector,button){
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition,target=$t(selector);
   if(!SpeechRecognition){toastTablet('El dictado por voz necesita Google Chrome o Microsoft Edge','error');return}
