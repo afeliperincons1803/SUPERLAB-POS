@@ -212,7 +212,7 @@ function renderTabletCart(){
 }
 async function sendTabletOrder(){
   const customer=$t('#customer-name').value.trim();if(!customer){toastTablet('Escribe tu nombre para poder llamar el pedido','error');return}
-  const note=$t('#tablet-order-note').value.trim(),payload={notes:`Cliente: ${customer}${note?` · ${note}`:''}`,items:tabletState.cart.map(x=>({product_id:x.product_id,quantity:x.quantity,toppings:x.toppings,modifiers:x.modifiers}))};
+  const note=$t('#tablet-order-note').value.trim(),payload={customer_name:customer,notes:note,items:tabletState.cart.map(x=>({product_id:x.product_id,quantity:x.quantity,toppings:x.toppings,modifiers:x.modifiers}))};
   try{
     $t('#send-tablet-order').disabled=true;
     const {order}=await tabletApi('/api/tablet/orders',{method:'POST',body:JSON.stringify(payload)});

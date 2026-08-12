@@ -154,6 +154,53 @@ def test_priced_modifiers_are_added_to_order_total(client):
     assert order["items"][0]["unit_price"] == 16000
 
 
+def test_paid_pos_order_creates_command_and_percentage_discounts(client):
+    login(client)
+    catalog = client.get("/api/catalog").get_json()
+    product = next(product for product in catalog["products"] if product["sku"] == "015")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "paid",
+        "payment_method": "cash",
+        "received": 12000,
+        "customer_name": "Camila",
+        "discount_percent": 10,
+        "items": [{
+            "product_id": product["id"],
+            "quantity": 2,
+            "discount_percent": 20,
+        }],
+    })
+    assert response.status_code == 201
+    order = response.get_json()["order"]
+    assert order["customer_name"] == "Camila"
+    assert order["status"] == "paid"
+    assert order["preparation_status"] == "queued"
+    assert order["items"][0]["discount"] == 2800
+    assert order["items"][0]["subtotal"] == 11200
+    assert order["discount"] == 1120
+    assert order["total"] == 10080
+    invoice = client.get(f"/api/orders/{order['id']}/escpos?type=invoice")
+    command = client.get(f"/api/orders/{order['id']}/escpos?type=command")
+    assert invoice.status_code == 200
+    assert command.status_code == 200
+    assert invoice.get_json()["escpos_base64"]
+    assert command.get_json()["escpos_base64"]
+
+
+def test_percentage_discount_must_be_in_range(client):
+    login(client)
+    product = client.get("/api/catalog").get_json()["products"][0]
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "held",
+        "discount_percent": 101,
+        "items": [{"product_id": product["id"], "quantity": 1}],
+    })
+    assert response.status_code == 400
+    assert "porcentaje" in response.get_json()["error"].lower()
+
+
 def test_legacy_formula_is_rejected(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
@@ -220,6 +267,7 @@ def test_tablet_order_reaches_worker_command_queue(client):
         "password": "TabletTestPassword2026!",
     }).status_code == 200
     response = client.post("/api/tablet/orders", json={
+        "customer_name": "Laura",
         "notes": "Cliente: Laura",
         "items": [{"product_id": product["id"], "quantity": 1, "toppings": [], "modifiers": []}],
     })
@@ -234,7 +282,7 @@ def test_tablet_order_reaches_worker_command_queue(client):
     assert any(row["id"] == order["id"] for row in orders)
     updated = client.put(f"/api/orders/{order['id']}/status", json={"status": "preparing"})
     assert updated.status_code == 200
-    assert updated.get_json()["order"]["status"] == "preparing"
+    assert updated.get_json()["order"]["preparation_status"] == "preparing"
 
 
 def test_worker_cannot_access_admin(client):

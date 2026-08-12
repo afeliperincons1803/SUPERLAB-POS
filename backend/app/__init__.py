@@ -3,8 +3,9 @@ from __future__ import annotations
 import os
 import secrets
 import mimetypes
+import base64
 from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -137,13 +138,16 @@ class Order(Base):
     cashier_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     cash_session_id: Mapped[int] = mapped_column(ForeignKey("cash_sessions.id"))
     status: Mapped[str] = mapped_column(String(20), default="paid")
+    preparation_status: Mapped[str] = mapped_column(String(20), default="completed")
     source: Mapped[str] = mapped_column(String(20), default="pos")
+    customer_name: Mapped[str] = mapped_column(String(80), default="")
     payment_method: Mapped[str] = mapped_column(String(30), default="cash")
     cash_amount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     qr_amount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     card_amount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     discount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     received: Mapped[Decimal | None] = mapped_column(Numeric(12, 0))
     notes: Mapped[str] = mapped_column(Text, default="")
@@ -160,6 +164,8 @@ class OrderItem(Base):
     product_name: Mapped[str] = mapped_column(String(120))
     quantity: Mapped[int] = mapped_column(Integer)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 0))
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)
+    discount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     toppings: Mapped[str] = mapped_column(Text, default="")
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 0))
 
@@ -586,19 +592,33 @@ def create_app(test_config=None):
                 return jsonify(error=str(exc)), 400
             modifier_total = sum((price for _name, price in modifiers), Decimal(0))
             unit_price = Decimal(product.price) + modifier_total
-            line_total = unit_price * quantity
+            line_gross = unit_price * quantity
+            try:
+                item_discount_percent = parse_percent(raw.get("discount_percent", 0))
+            except ValueError as exc:
+                return jsonify(error=str(exc)), 400
+            item_discount = percent_amount(line_gross, item_discount_percent)
+            line_total = line_gross - item_discount
             subtotal += line_total
             labels = [str(x)[:80] for x in raw.get("toppings", [])]
             labels += [f"{name} (+{money(price):,})".replace(",", ".") for name, price in modifiers]
             items.append(OrderItem(
                 product_id=product.id, product_name=product.name, quantity=quantity,
-                unit_price=unit_price, subtotal=line_total,
+                unit_price=unit_price, discount_percent=item_discount_percent,
+                discount=item_discount, subtotal=line_total,
                 toppings=", ".join(labels),
             ))
-        discount = min(parse_money(data.get("discount", 0)), subtotal)
+        try:
+            discount_percent = parse_percent(data.get("discount_percent", 0))
+            discount = percent_amount(subtotal, discount_percent)
+            if not discount_percent and data.get("discount") not in (None, ""):
+                discount = min(parse_money(data.get("discount", 0)), subtotal)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
         total = subtotal - discount
         status = str(data.get("status", "paid"))
         payment = str(data.get("payment_method", "cash"))
+        customer_name = str(data.get("customer_name", "")).strip()[:80]
         if status not in {"paid", "held"} or payment not in {"cash", "qr", "card", "mixed"}:
             return jsonify(error="Estado o método de pago inválido"), 400
         try:
@@ -612,9 +632,10 @@ def create_app(test_config=None):
         order = Order(
             number=f"SL-{datetime.now():%y%m%d}-{count + 1:04d}",
             cashier_id=user.id, cash_session_id=cash.id, status=status,
-            source="pos",
+            preparation_status="queued" if status == "paid" else "held",
+            source="pos", customer_name=customer_name,
             payment_method=payment, cash_amount=cash_amount, qr_amount=qr_amount, card_amount=card_amount,
-            subtotal=subtotal, discount=discount, total=total,
+            subtotal=subtotal, discount=discount, discount_percent=discount_percent, total=total,
             received=received, notes=str(data.get("notes", "")).strip(),
             items=items,
         )
@@ -631,6 +652,9 @@ def create_app(test_config=None):
         if not cash:
             return jsonify(error="La tienda todavía no ha abierto caja. Solicita ayuda al personal."), 409
         data = request.get_json(silent=True) or {}
+        customer_name = str(data.get("customer_name", "")).strip()[:80]
+        if not customer_name:
+            return jsonify(error="Escribe tu nombre para poder llamar el pedido"), 400
         raw_items = data.get("items")
         if not isinstance(raw_items, list) or not raw_items:
             return jsonify(error="El pedido está vacío"), 400
@@ -653,14 +677,16 @@ def create_app(test_config=None):
             labels += [f"{name} (+{money(price):,})".replace(",", ".") for name, price in modifiers]
             items.append(OrderItem(
                 product_id=product.id, product_name=product.name, quantity=quantity,
-                unit_price=unit_price, subtotal=line_total, toppings=", ".join(labels),
+                unit_price=unit_price, discount_percent=0, discount=0,
+                subtotal=line_total, toppings=", ".join(labels),
             ))
         count = db.scalar(select(func.count(Order.id))) or 0
         order = Order(
             number=f"SL-{datetime.now():%y%m%d}-{count + 1:04d}",
-            cashier_id=user.id, cash_session_id=cash.id, status="queued", source="tablet",
+            cashier_id=user.id, cash_session_id=cash.id, status="queued",
+            preparation_status="queued", source="tablet", customer_name=customer_name,
             payment_method="pending", cash_amount=0, qr_amount=0, card_amount=0,
-            subtotal=subtotal, discount=0, total=subtotal, received=None,
+            subtotal=subtotal, discount=0, discount_percent=0, total=subtotal, received=None,
             notes=str(data.get("notes", "")).strip(), items=items,
         )
         db.add(order)
@@ -677,13 +703,29 @@ def create_app(test_config=None):
             stmt = stmt.where(or_(Order.cashier_id == user.id, Order.source == "tablet"))
         return jsonify(orders=[serialize_order(x) for x in db.scalars(stmt).unique().all()])
 
+    @app.get("/api/orders/<int:order_id>/escpos")
+    @auth_required()
+    def order_escpos(db, user, order_id):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
+        order = db.get(Order, order_id)
+        if not order or (user.role != "superadmin" and order.cashier_id != user.id and order.source != "tablet"):
+            return jsonify(error="Pedido no encontrado"), 404
+        ticket_type = str(request.args.get("type", "invoice"))
+        if ticket_type not in {"invoice", "command"}:
+            return jsonify(error="Tipo de impresión no válido"), 400
+        if ticket_type == "invoice" and order.status != "paid":
+            return jsonify(error="Solo los pedidos pagados tienen factura"), 409
+        payload = build_escpos_ticket(order, ticket_type)
+        return jsonify(escpos_base64=base64.b64encode(payload).decode("ascii"), ticket_type=ticket_type)
+
     @app.put("/api/orders/<int:order_id>/status")
     @auth_required()
     def update_order_status(db, user, order_id):
         if user.role == "tablet":
             return jsonify(error="Acceso no permitido"), 403
         order = db.get(Order, order_id)
-        if not order or order.source != "tablet":
+        if not order or order.preparation_status not in {"queued", "preparing", "ready", "completed"}:
             return jsonify(error="Comanda no encontrada"), 404
         target = str((request.get_json(silent=True) or {}).get("status", ""))
         transitions = {
@@ -692,9 +734,9 @@ def create_app(test_config=None):
             "ready": {"completed"},
             "completed": set(),
         }
-        if target not in transitions.get(order.status, set()):
+        if target not in transitions.get(order.preparation_status, set()):
             return jsonify(error="Cambio de estado no permitido"), 409
-        order.status = target
+        order.preparation_status = target
         db.commit()
         return jsonify(order=serialize_order(order))
 
@@ -1089,6 +1131,20 @@ def parse_optional_money(value):
     return None if value in (None, "") else parse_money(value)
 
 
+def parse_percent(value):
+    try:
+        percent = Decimal(str(value or 0))
+    except Exception as exc:
+        raise ValueError("Porcentaje de descuento invÃ¡lido") from exc
+    if percent < 0 or percent > 100:
+        raise ValueError("El porcentaje de descuento debe estar entre 0 y 100")
+    return percent.quantize(Decimal("0.01"))
+
+
+def percent_amount(amount, percent):
+    return (Decimal(amount) * Decimal(percent) / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
 def payment_breakdown(data, payment, total, status):
     if status == "held":
         return Decimal(0), Decimal(0), Decimal(0)
@@ -1193,12 +1249,114 @@ def serialize_topping(x):
 def serialize_order(x):
     return {
         "id": x.id, "number": x.number, "cashier": x.cashier.name, "status": x.status,
-        "source": x.source,
+        "preparation_status": x.preparation_status, "source": x.source, "customer_name": x.customer_name,
         "payment_method": x.payment_method, "cash_amount": money(x.cash_amount), "qr_amount": money(x.qr_amount),
         "card_amount": money(x.card_amount), "subtotal": money(x.subtotal), "discount": money(x.discount),
+        "discount_percent": float(x.discount_percent or 0),
         "total": money(x.total), "received": money(x.received), "notes": x.notes, "created_at": bogota_iso(x.created_at),
-        "items": [{"name": i.product_name, "quantity": i.quantity, "unit_price": money(i.unit_price), "subtotal": money(i.subtotal), "toppings": i.toppings} for i in x.items],
+        "items": [{"name": i.product_name, "quantity": i.quantity, "unit_price": money(i.unit_price),
+                   "discount_percent": float(i.discount_percent or 0), "discount": money(i.discount),
+                   "subtotal": money(i.subtotal), "toppings": i.toppings} for i in x.items],
     }
+
+
+def build_escpos_ticket(order, ticket_type):
+    """Build a compact 80 mm ESC/POS ticket for QZ Tray raw printing."""
+    width = 42
+    chunks = [b"\x1b@"]
+
+    def raw(value=""):
+        chunks.append((str(value) + "\n").encode("cp850", errors="replace"))
+
+    def center(enabled=True):
+        chunks.append(b"\x1ba" + (b"\x01" if enabled else b"\x00"))
+
+    def bold(enabled=True):
+        chunks.append(b"\x1bE" + (b"\x01" if enabled else b"\x00"))
+
+    def size(value=0):
+        chunks.append(b"\x1d!" + bytes([value]))
+
+    def divider(char="-"):
+        raw(char * width)
+
+    def two_columns(left, right):
+        left, right = str(left), str(right)
+        room = max(1, width - len(right) - 1)
+        raw(left[:room].ljust(room) + " " + right[-(width-room-1):])
+
+    center(); bold(); size(0x10); raw("SUPERLAB"); size(); raw("MIX AND CHILL")
+    if ticket_type == "command":
+        raw("COMANDA DE PREPARACION")
+    else:
+        raw("FACTURA DE VENTA")
+    bold(False); center(False); divider()
+    raw(f"Pedido: {order.number}")
+    raw(f"Fecha: {as_bogota(order.created_at):%d/%m/%Y %H:%M}")
+    raw(f"Cajero: {order.cashier.name}")
+    divider()
+
+    if ticket_type == "command":
+        center(); bold(); raw("POR HACER"); size(0x11); raw(order.customer_name or "SIN NOMBRE"); size(); bold(False); center(False); divider("=")
+        for item in order.items:
+            bold(); raw(f"{item.quantity} x {item.product_name}"); bold(False)
+            if item.toppings:
+                for line in wrap_ticket_text(item.toppings, width):
+                    raw(line)
+            divider()
+        if order.notes:
+            bold(); raw("NOTA GENERAL:"); bold(False)
+            for line in wrap_ticket_text(order.notes, width):
+                raw(line)
+        center(); raw("Marcar como lista en el POS")
+    else:
+        raw(f"Cliente: {order.customer_name or 'Consumidor final'}")
+        divider()
+        gross_subtotal = Decimal(0)
+        line_discounts = Decimal(0)
+        for item in order.items:
+            raw(f"{item.quantity} x {item.product_name}")
+            gross = Decimal(item.unit_price) * item.quantity
+            gross_subtotal += gross
+            line_discounts += Decimal(item.discount or 0)
+            two_columns(f"  {item.quantity} x {money(item.unit_price):,}".replace(",", "."), f"{money(item.subtotal):,}".replace(",", "."))
+            if item.discount:
+                two_columns(f"  Desc. producto {item.discount_percent}%", f"-{money(item.discount):,}".replace(",", "."))
+        divider()
+        two_columns("Subtotal bruto", f"{money(gross_subtotal):,}".replace(",", "."))
+        if line_discounts:
+            two_columns("Descuentos productos", f"-{money(line_discounts):,}".replace(",", "."))
+        if order.discount:
+            two_columns(f"Descuento total {order.discount_percent}%", f"-{money(order.discount):,}".replace(",", "."))
+        bold(); size(0x01); two_columns("TOTAL", f"$ {money(order.total):,}".replace(",", ".")); size(); bold(False); divider()
+        two_columns("Pago", payment_label(order.payment_method))
+        if order.received is not None and order.payment_method == "cash":
+            two_columns("Recibido", f"$ {money(order.received):,}".replace(",", "."))
+            two_columns("Cambio", f"$ {money(max(Decimal(0), Decimal(order.received)-Decimal(order.total))):,}".replace(",", "."))
+        center(); raw(""); raw("Gracias por experimentar con Superlab")
+        raw(f"Te llamaremos como {order.customer_name or 'cliente'}")
+    raw(""); raw(""); raw("")
+    chunks.append(b"\x1dV\x00")
+    return b"".join(chunks)
+
+
+def wrap_ticket_text(value, width=42):
+    words, lines, current = str(value).split(), [], ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word[:width]
+    if current:
+        lines.append(current)
+    return lines
+
+
+def payment_label(method):
+    return {"cash": "Efectivo", "qr": "Consignacion QR", "card": "Tarjeta", "mixed": "Mixto", "pending": "Pendiente"}.get(method, method)
 
 
 def serialize_stock_item(x):
@@ -1280,6 +1438,18 @@ def upgrade_schema(engine):
             statements.append(f"ALTER TABLE orders ADD COLUMN {name} NUMERIC(12,0) NOT NULL DEFAULT 0")
     if "source" not in order_columns:
         statements.append("ALTER TABLE orders ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'pos'")
+    if "preparation_status" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN preparation_status VARCHAR(20) NOT NULL DEFAULT 'completed'")
+        statements.append("UPDATE orders SET preparation_status = status WHERE source = 'tablet' AND status IN ('queued','preparing','ready','completed')")
+    if "customer_name" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN customer_name VARCHAR(80) NOT NULL DEFAULT ''")
+    if "discount_percent" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0")
+    item_columns = {column["name"] for column in inspect(engine).get_columns("order_items")}
+    if "discount_percent" not in item_columns:
+        statements.append("ALTER TABLE order_items ADD COLUMN discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0")
+    if "discount" not in item_columns:
+        statements.append("ALTER TABLE order_items ADD COLUMN discount NUMERIC(12,0) NOT NULL DEFAULT 0")
     if statements:
         with engine.begin() as connection:
             for statement in statements:
