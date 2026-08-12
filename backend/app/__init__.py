@@ -281,7 +281,10 @@ def create_app(test_config=None):
 
     @app.get("/")
     def index():
-        return send_from_directory(FRONTEND, "index.html")
+        response = send_from_directory(FRONTEND, "index.html")
+        response.cache_control.no_store = True
+        response.cache_control.max_age = 0
+        return response
 
     @app.get("/health")
     def health():
@@ -302,11 +305,17 @@ def create_app(test_config=None):
 
     @app.get("/app")
     def app_shell():
-        return send_from_directory(FRONTEND, "app.html")
+        response = send_from_directory(FRONTEND, "app.html")
+        response.cache_control.no_store = True
+        response.cache_control.max_age = 0
+        return response
 
     @app.get("/tablet")
     def tablet_shell():
-        return send_from_directory(FRONTEND, "tablet.html")
+        response = send_from_directory(FRONTEND, "tablet.html")
+        response.cache_control.no_store = True
+        response.cache_control.max_age = 0
+        return response
 
     @app.get("/static/<path:path>")
     def static_files(path):
@@ -316,6 +325,9 @@ def create_app(test_config=None):
             response.cache_control.public = True
             response.cache_control.max_age = 604800
             response.cache_control.immutable = True
+        else:
+            response.cache_control.no_store = True
+            response.cache_control.max_age = 0
         return response
 
     @app.post("/api/auth/login")
