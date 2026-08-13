@@ -1093,7 +1093,7 @@ def seed(db):
         ("013", "Crepa de Pollo", "Crepas Lab", "Pollo con champiñones en salsa bechamel, queso y cilantro.", 22000, False),
         ("014", "Crepa Dulce", "Crepas Lab", "Nutella, banano, fresa, arándanos, queso, chocolate Hershey's y leche condensada.", 22000, False),
         ("015", "Mini Donas x7", "Mini Donas", "Siete mini donas crujientes, dulces y preparadas para acompañar tu mix.", 7000, False),
-        ("016", "Mini Donas x15", "Mini Donas", "Quince mini donas crujientes, dulces y preparadas para compartir.", 15000, False),
+        ("016", "Mini Donas x14", "Mini Donas", "Catorce mini donas crujientes, dulces y preparadas para compartir.", 15000, False),
         ("017", "Michelada Clásica Mexicana", "Micheladas y Mocktails", "Chamoy con Tajín, limón fresco y banderita de tamarindo. Elige cerveza, picante y frutas.", 15000, True),
         ("018", "Michelada Dulce", "Micheladas y Mocktails", "Limón fresco, escarchado premium de mora azul y gomitas. Elige cerveza y familia de frutas.", 15000, True),
         ("019", "Malteada Unicornio", "Helados y Frappés", "Malteada de chicle con algodón de azúcar, crema y toppings de colores.", 15000, True),

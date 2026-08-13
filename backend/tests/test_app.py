@@ -51,6 +51,7 @@ def test_login_and_seeded_catalog(client):
     assert by_sku["012"]["name"] == "Crepa de Res"
     assert by_sku["012"]["price"] == 22000
     assert by_sku["015"]["name"] == "Mini Donas x7"
+    assert by_sku["016"]["name"] == "Mini Donas x14"
     assert by_sku["015"]["price"] == 7000
     assert by_sku["017"]["name"] == "Michelada Clásica Mexicana"
     assert by_sku["017"]["price"] == 15000
