@@ -91,7 +91,9 @@ function baseSections(sku){
   return ({
     '001':[{title:'Elige 3 ingredientes de la barra',min:3,max:3,options:bar},{title:'Elige 1 salsa',min:1,max:1,options:sauces},{title:'Elige 1 paleta',min:1,max:1,options:group('Paletas')}],
     '002':[{title:'Elige 3 ingredientes de la barra',min:3,max:3,options:bar},{title:'Elige 1 salsa',min:1,max:1,options:sauces},{title:'Elige 1 paleta',min:1,max:1,options:group('Paletas')}],
-    '003':[{title:'Elige el sabor del helado',min:1,max:1,options:['Chocolate','Frutos Rojos','Frutos Amarillos']},{title:'Elige 1 salsa artesanal',min:1,max:1,options:sauces},{title:'Elige 3 toppings',min:3,max:3,options:toppings}],
+    '003':[{title:'Elige 1 salsa artesanal',min:1,max:1,options:sauces},{title:'Elige 3 toppings',min:3,max:3,options:toppings}],
+    '029':[{title:'Elige 1 salsa artesanal',min:1,max:1,options:sauces},{title:'Elige 3 toppings',min:3,max:3,options:toppings}],
+    '030':[{title:'Elige 1 salsa artesanal',min:1,max:1,options:sauces},{title:'Elige 3 toppings',min:3,max:3,options:toppings}],
     '004':[{title:'Elige el sabor del smoothie',min:1,max:1,options:group('Sabores smoothie')}],
     '005':[{title:'Elige el sabor de la soda',min:1,max:1,options:['Frutos Amarillos','Frutos Rojos','Liche y Mora Azul']}],
     '006':[{title:'Elige la salsa',min:1,max:1,options:['Salsa de Chocolate','Salsa de Caramelo']}],

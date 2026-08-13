@@ -30,14 +30,18 @@ def test_login_and_seeded_catalog(client):
     response = client.get("/api/catalog")
     assert response.status_code == 200
     products = response.get_json()["products"]
-    assert len(products) == 28
+    assert len(products) == 30
     by_sku = {product["sku"]: product for product in products}
     assert by_sku["001"]["name"] == "Granizado Lab 9 oz"
     assert by_sku["001"]["price"] == 13000
     assert by_sku["002"]["name"] == "Granizado Lab 12 oz"
     assert by_sku["002"]["price"] == 13000
-    assert by_sku["003"]["name"] == "Sundae Lab"
+    assert by_sku["003"]["name"] == "Sundae Lab · Frutos rojos"
     assert by_sku["003"]["price"] == 13000
+    assert by_sku["029"]["name"] == "Sundae Lab · Frutos amarillos"
+    assert by_sku["029"]["image_url"].endswith("/029-pos.webp")
+    assert by_sku["030"]["name"] == "Sundae Lab · Chocolate"
+    assert by_sku["030"]["image_url"].endswith("/030-pos.webp")
     assert by_sku["004"]["name"] == "Smoothie Lab"
     assert by_sku["004"]["price"] == 16000
     assert by_sku["010"]["name"] == "Bowl Lab"
@@ -64,7 +68,7 @@ def test_login_and_seeded_catalog(client):
     assert by_sku["027"]["price"] is None
     assert by_sku["028"]["name"] == "Michelada Sin Licor"
     assert by_sku["028"]["price"] == 10000
-    assert all(by_sku[f"{index:03d}"]["image_url"].endswith(f"/{index:03d}-pos.webp") for index in range(1, 29))
+    assert all(by_sku[f"{index:03d}"]["image_url"].endswith(f"/{index:03d}-pos.webp") for index in range(1, 31))
     toppings = response.get_json()["toppings"]
     by_group = {}
     for topping in toppings:
@@ -97,7 +101,27 @@ def test_database_health_and_admin_diagnostics(client):
     data = status.get_json()
     assert data["connected"] is True
     assert data["persistent"] is False
-    assert data["counts"]["products"] == 28
+    assert data["counts"]["products"] == 30
+
+
+def test_admin_can_reorder_products_and_catalog_keeps_order(client):
+    login(client)
+    products = client.get("/api/products").get_json()["products"]
+    reversed_ids = [product["id"] for product in reversed(products)]
+    response = client.put("/api/products/reorder", json={"product_ids": reversed_ids})
+    assert response.status_code == 200
+    assert [product["id"] for product in response.get_json()["products"]] == reversed_ids
+    catalog = client.get("/api/catalog").get_json()["products"]
+    assert [product["id"] for product in catalog] == reversed_ids
+    assert [product["sort_order"] for product in catalog] == list(range(10, 10 * (len(catalog) + 1), 10))
+
+
+def test_product_reorder_rejects_incomplete_or_duplicate_ids(client):
+    login(client)
+    products = client.get("/api/products").get_json()["products"]
+    ids = [product["id"] for product in products]
+    assert client.put("/api/products/reorder", json={"product_ids": ids[:-1]}).status_code == 400
+    assert client.put("/api/products/reorder", json={"product_ids": [ids[0]] * len(ids)}).status_code == 400
 
 
 def test_supabase_url_is_normalized_with_psycopg_and_ssl():
@@ -300,7 +324,7 @@ def test_worker_cannot_access_admin(client):
 def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
-    assert len(catalog["products"]) == 28
+    assert len(catalog["products"]) == 30
     assert all(product["sku"].isdigit() for product in catalog["products"])
     assert client.post("/api/products", json={
         "name": "Código inválido", "category_id": 1, "sku": "ABC-15",
@@ -311,7 +335,7 @@ def test_catalog_seed_numeric_codes_daily_summary_and_delete(client):
     product_id = catalog["products"][0]["id"]
     assert client.delete(f"/api/products/{product_id}").status_code == 200
     remaining = client.get("/api/catalog").get_json()["products"]
-    assert len(remaining) == 27
+    assert len(remaining) == 29
 
 
 def test_inventory_alerts_allow_zero_stock(client):

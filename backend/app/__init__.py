@@ -87,6 +87,7 @@ class Product(Base):
     sku: Mapped[str | None] = mapped_column(String(40), unique=True, nullable=True)
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     customizable: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     category: Mapped[Category] = relationship()
@@ -387,7 +388,7 @@ def create_app(test_config=None):
     @auth_required()
     def catalog(db, user):
         categories = db.scalars(select(Category).where(Category.active.is_(True)).order_by(Category.id)).all()
-        products = db.scalars(select(Product).where(Product.deleted_at.is_(None)).order_by(Product.name)).all()
+        products = db.scalars(select(Product).where(Product.deleted_at.is_(None)).order_by(Product.sort_order, Product.id)).all()
         toppings = db.scalars(select(Topping).order_by(Topping.group_name, Topping.name)).all()
         return jsonify(
             categories=[serialize_category(x) for x in categories],
@@ -399,7 +400,7 @@ def create_app(test_config=None):
     @auth_required(admin=True)
     def products(db, user):
         if request.method == "GET":
-            return jsonify(products=[serialize_product(x) for x in db.scalars(select(Product).where(Product.deleted_at.is_(None)).order_by(Product.name)).all()])
+            return jsonify(products=[serialize_product(x) for x in db.scalars(select(Product).where(Product.deleted_at.is_(None)).order_by(Product.sort_order, Product.id)).all()])
         data = request.get_json(silent=True) or {}
         error = validate_product(data)
         if error:
@@ -413,6 +414,7 @@ def create_app(test_config=None):
             sku=str(data.get("sku") or "").strip() or None,
             available=bool(data.get("available", True)),
             customizable=bool(data.get("customizable", False)),
+            sort_order=(db.scalar(select(func.max(Product.sort_order))) or 0) + 10,
         )
         db.add(product)
         try:
@@ -421,6 +423,24 @@ def create_app(test_config=None):
             db.rollback()
             return jsonify(error="El código ya está asignado a otro producto"), 409
         return jsonify(product=serialize_product(product)), 201
+
+    @app.put("/api/products/reorder")
+    @auth_required(admin=True)
+    def reorder_products(db, user):
+        data = request.get_json(silent=True) or {}
+        try:
+            ordered_ids = [int(value) for value in data.get("product_ids", [])]
+        except (TypeError, ValueError):
+            return jsonify(error="El orden de productos no es válido"), 400
+        products = db.scalars(select(Product).where(Product.deleted_at.is_(None))).all()
+        current_ids = {product.id for product in products}
+        if len(ordered_ids) != len(current_ids) or len(set(ordered_ids)) != len(ordered_ids) or set(ordered_ids) != current_ids:
+            return jsonify(error="El orden debe incluir todos los productos activos una sola vez"), 400
+        products_by_id = {product.id: product for product in products}
+        for position, product_id in enumerate(ordered_ids, start=1):
+            products_by_id[product_id].sort_order = position * 10
+        db.commit()
+        return jsonify(products=[serialize_product(products_by_id[product_id]) for product_id in ordered_ids])
 
     @app.route("/api/products/<int:product_id>", methods=["PUT", "DELETE"])
     @auth_required(admin=True)
@@ -1058,7 +1078,9 @@ def seed(db):
     catalog_products = [
         ("001", "Granizado Lab 9 oz", "Granizados Lab", "Sabor de temporada. Incluye 3 ingredientes de la barra, 1 salsa y 1 paleta.", 13000, True),
         ("002", "Granizado Lab 12 oz", "Granizados Lab", "Sabor de temporada. Incluye 3 ingredientes de la barra, 1 salsa y 1 paleta.", 13000, True),
-        ("003", "Sundae Lab", "Helados y Frappés", "Helado soft con salsa artesanal, 3 toppings y frutas frescas.", 13000, True),
+        ("003", "Sundae Lab · Frutos rojos", "Helados y Frappés", "Helado soft con salsa de frutos rojos, frutas frescas y 3 toppings de la barra.", 13000, True),
+        ("029", "Sundae Lab · Frutos amarillos", "Helados y Frappés", "Helado soft con salsa de frutos amarillos, mango, piña y 3 toppings de la barra.", 13000, True),
+        ("030", "Sundae Lab · Chocolate", "Helados y Frappés", "Helado soft con salsa de chocolate, bocados de chocolate y 3 toppings de la barra.", 13000, True),
         ("004", "Smoothie Lab", "Bebidas Lab", "Batido de fruta natural. Incluye toppings asignados de acuerdo con el sabor.", 16000, True),
         ("005", "Soda Italiana Lab", "Bebidas Lab", "Refrescante y preparada al momento. Elige uno de los tres sabores de la carta.", 14000, True),
         ("006", "Frappé de Café", "Helados y Frappés", "Con crema chantilly, salsa de chocolate o caramelo y barquillo.", 13000, True),
@@ -1114,12 +1136,14 @@ def seed(db):
         "026": "026-pos.webp",
         "027": "027-pos.webp",
         "028": "028-pos.webp",
+        "029": "029-pos.webp",
+        "030": "030-pos.webp",
     }
     existing_products = {row.sku: row for row in db.scalars(select(Product).where(Product.sku.is_not(None))).all()}
-    catalog_version = "2026-08-superlab-menu-v3-pos-caja"
+    catalog_version = "2026-08-superlab-menu-v4-sundaes-order"
     version_setting = db.get(AppSetting, "catalog_version")
     apply_catalog = not version_setting or version_setting.value != catalog_version
-    for code, name, category_name, description, price, customizable in catalog_products:
+    for position, (code, name, category_name, description, price, customizable) in enumerate(catalog_products, start=1):
         product = existing_products.get(code)
         is_new = product is None
         if not product:
@@ -1135,6 +1159,7 @@ def seed(db):
             product.available = True
             product.customizable = customizable
             product.deleted_at = None
+            product.sort_order = position * 10
     if not version_setting:
         version_setting = AppSetting(key="catalog_version")
         db.add(version_setting)
@@ -1264,7 +1289,7 @@ def serialize_category(x):
 
 
 def serialize_product(x):
-    return {"id": x.id, "name": x.name, "description": x.description, "image_url": x.image_url, "price": money(x.price), "sku": x.sku, "available": x.available, "customizable": x.customizable, "category_id": x.category_id, "category": x.category.name if x.category else "", "created_at": bogota_iso(x.created_at)}
+    return {"id": x.id, "name": x.name, "description": x.description, "image_url": x.image_url, "price": money(x.price), "sku": x.sku, "available": x.available, "customizable": x.customizable, "sort_order": x.sort_order, "category_id": x.category_id, "category": x.category.name if x.category else "", "created_at": bogota_iso(x.created_at)}
 
 
 def serialize_topping(x):
@@ -1458,6 +1483,8 @@ def upgrade_schema(engine):
         statements.append("ALTER TABLE products ADD COLUMN created_at TIMESTAMP")
     if "deleted_at" not in columns:
         statements.append("ALTER TABLE products ADD COLUMN deleted_at TIMESTAMP")
+    if "sort_order" not in columns:
+        statements.append("ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
     for name in ("cash_amount", "qr_amount", "card_amount"):
         if name not in order_columns:
             statements.append(f"ALTER TABLE orders ADD COLUMN {name} NUMERIC(12,0) NOT NULL DEFAULT 0")
