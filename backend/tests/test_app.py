@@ -71,12 +71,12 @@ def test_login_and_seeded_catalog(client):
         if topping["available"]:
             by_group.setdefault(topping["group"], set()).add(topping["name"])
     assert by_group["Frutas"] == {
-        "Arándanos", "Cereza", "Frambuesa", "Fresa", "Kiwi", "Melón", "Mora",
-        "Piña", "Tomate de árbol", "Uva",
+        "Mango biche", "Mango dulce", "Fresa y arándanos", "Durazno", "Sandía",
+        "Lulo", "Piña", "Cereza",
     }
     assert by_group["Salsas"] == {
-        "Leche Condensada", "Salsa de Caramelo", "Salsa de Chamoy",
-        "Salsa de Chocolate", "Salsa de Fresa", "Salsa de Piña",
+        "Frutos amarillos", "Frutos rojos", "Leche condensada", "Crema de leche",
+        "Chocolate", "Chamoy", "Fresa",
     }
     assert by_group["Adicionales sin costo"] == {"Tajín", "Pimienta", "Sal"}
     assert by_group["Cervezas"] == {"Sol", "Coronita"}

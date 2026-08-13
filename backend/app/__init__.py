@@ -986,14 +986,13 @@ def seed(db):
         category.active = True
 
     topping_specs = {
-        # Conserva la selección de frutas que ya está activa en Supabase.
-        "Frutas": ["Arándanos", "Cereza", "Frambuesa", "Fresa", "Kiwi", "Melón", "Mora", "Piña", "Tomate de árbol", "Uva"],
+        "Frutas": ["Mango biche", "Mango dulce", "Fresa y arándanos", "Durazno", "Sandía", "Lulo", "Piña", "Cereza"],
         "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Sandía & Mango"],
         "Siropes": ["Sirope Fresa", "Sirope Mora Azul", "Sirope Mango", "Sirope Maracuyá", "Sirope Cereza", "Sirope Uva", "Sirope Limón"],
         "Dulces": ["Gomitas Osito", "Gomitas Agrias", "Malvaviscos", "Chocolatinas", "Chispas de Colores"],
         "Crunch": ["Galleta Oreo", "Granola", "Cereal Colorido", "Coco Rallado", "Maní"],
         "Perlas": ["Perlas de Tapioca", "Perlas de Fruta", "Perlas Explosivas"],
-        "Salsas": ["Leche Condensada", "Salsa de Caramelo", "Salsa de Chamoy", "Salsa de Chocolate", "Salsa de Fresa", "Salsa de Piña"],
+        "Salsas": ["Frutos amarillos", "Frutos rojos", "Leche condensada", "Crema de leche", "Chocolate", "Chamoy", "Fresa"],
         "Adicionales sin costo": ["Tajín", "Pimienta", "Sal"],
         "Sales": ["Sales dulces", "Sales picantes", "Miguelito"],
         "Paletas": ["Paleta dulce", "Paleta ácida"],
@@ -1040,6 +1039,20 @@ def seed(db):
                 )
                 db.add(item)
                 existing_stock[name] = item
+            else:
+                item = existing_stock[name]
+                item.category = group
+                item.unit = unit
+                item.active = True
+
+    topinera_stock = {
+        "Frutas": set(topping_specs["Frutas"]),
+        "Salsas": set(topping_specs["Salsas"]),
+    }
+    for item in existing_stock.values():
+        valid_names = topinera_stock.get(item.category)
+        if valid_names is not None and item.name not in valid_names:
+            item.active = False
 
     db.flush()
     catalog_products = [
