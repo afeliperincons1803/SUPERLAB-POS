@@ -8,6 +8,7 @@ ON CONFLICT (name) DO NOTHING;
 INSERT INTO toppings (name, group_name) VALUES
 ('Mango biche','Frutas'),('Mango dulce','Frutas'),('Fresa y arándanos','Frutas'),
 ('Durazno','Frutas'),('Sandía','Frutas'),('Lulo','Frutas'),('Piña','Frutas'),('Cereza','Frutas'),
+('Maracuyá','Frutas'),('Queso','Frutas'),
 ('Frutos Rojos','Sabores smoothie'),('Frutos Amarillos','Sabores smoothie'),
 ('Frutos Verdes','Sabores smoothie'),('Sandía & Mango','Sabores smoothie'),
 ('Sirope Fresa','Siropes'),('Sirope Mora Azul','Siropes'),('Sirope Mango','Siropes'),

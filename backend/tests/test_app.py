@@ -77,7 +77,7 @@ def test_login_and_seeded_catalog(client):
             by_group.setdefault(topping["group"], set()).add(topping["name"])
     assert by_group["Frutas"] == {
         "Mango biche", "Mango dulce", "Fresa y arándanos", "Durazno", "Sandía",
-        "Lulo", "Piña", "Cereza",
+        "Lulo", "Piña", "Cereza", "Maracuyá", "Queso",
     }
     assert by_group["Salsas"] == {
         "Frutos amarillos", "Frutos rojos", "Leche condensada", "Crema de leche",

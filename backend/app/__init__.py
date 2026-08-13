@@ -1006,7 +1006,7 @@ def seed(db):
         category.active = True
 
     topping_specs = {
-        "Frutas": ["Mango biche", "Mango dulce", "Fresa y arándanos", "Durazno", "Sandía", "Lulo", "Piña", "Cereza"],
+        "Frutas": ["Mango biche", "Mango dulce", "Fresa y arándanos", "Durazno", "Sandía", "Lulo", "Piña", "Cereza", "Maracuyá", "Queso"],
         "Sabores smoothie": ["Frutos Rojos", "Frutos Amarillos", "Sandía & Mango"],
         "Siropes": ["Sirope Fresa", "Sirope Mora Azul", "Sirope Mango", "Sirope Maracuyá", "Sirope Cereza", "Sirope Uva", "Sirope Limón"],
         "Dulces": ["Gomitas Osito", "Gomitas Agrias", "Malvaviscos", "Chocolatinas", "Chispas de Colores"],
