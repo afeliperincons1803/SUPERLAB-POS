@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Superlab POS</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><rect width=%2264%22 height=%2264%22 rx=%2216%22 fill=%22%23ed4b16%22/><text x=%2217%22 y=%2247%22 font-size=%2242%22 fill=%22white%22>S</text></svg>">
-  <link rel="stylesheet" href="/static/styles.css?v=20260813-1">
+  <link rel="stylesheet" href="/static/styles.css?v=20260814-1">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 </head>
 <body class="app-page">
@@ -69,10 +69,15 @@
     </section>
 
     <section id="view-orders" class="view content-view">
-      <div class="section-toolbar"><div><h2>Comandas y pedidos</h2><p>Consulta aquí las comandas activas y el historial registrado por caja.</p></div><button class="button secondary" data-refresh="orders">Actualizar</button></div>
-      <h3 class="orders-subtitle">Comandas activas</h3>
+      <div class="section-toolbar"><div><h2>Comandas y pedidos</h2><p>Una sola cola de cocina con tiempos estimados según los pedidos pendientes.</p></div><button class="button secondary" data-refresh="orders">Actualizar</button></div>
+      <div id="order-filters" class="order-filters" role="tablist" aria-label="Estado de los pedidos">
+        <button type="button" class="active" data-order-filter="queued">Por hacer</button>
+        <button type="button" data-order-filter="ready">Hechos</button>
+        <button type="button" data-order-filter="completed">Entregados</button>
+        <button type="button" data-order-filter="paid">Facturados</button>
+      </div>
       <div id="command-board" class="command-board"></div>
-      <h3 class="orders-subtitle">Historial</h3>
+      <h3 class="orders-subtitle">Historial de facturas</h3>
       <div class="table-card"><table><thead><tr><th>Pedido</th><th>Fecha</th><th>Cajero</th><th>Estado</th><th>Pago</th><th>Total</th><th></th></tr></thead><tbody id="orders-table"></tbody></table></div>
     </section>
 
@@ -105,7 +110,7 @@
 
     <section id="view-products" class="view content-view">
       <div class="section-toolbar"><div><h2>Productos</h2><p>Arrastra el icono de tres líneas para definir el orden en que aparecen en el catálogo.</p></div><button id="new-product" class="button primary">＋ Nuevo producto</button></div>
-      <div class="table-card"><table><thead><tr><th class="drag-column">Orden</th><th>Producto</th><th>Categoría</th><th>Código</th><th>Precio</th><th>Disponible</th><th></th></tr></thead><tbody id="products-table"></tbody></table></div>
+      <div class="table-card"><table><thead><tr><th class="drag-column">Orden</th><th>Producto</th><th>Categoría</th><th>Código</th><th>Precio</th><th>Preparación</th><th>Disponible</th><th></th></tr></thead><tbody id="products-table"></tbody></table></div>
     </section>
 
     <section id="view-inventory" class="view content-view">
@@ -128,6 +133,6 @@
 
   <div id="modal" class="modal" aria-hidden="true"><div class="modal-card"><button type="button" class="modal-close" data-close-modal aria-label="Cerrar">×</button><div id="modal-body"></div></div></div>
   <script src="/static/printer-bridge.js?v=20260812-2"></script>
-  <script src="/static/app.js?v=20260813-1"></script>
+  <script src="/static/app.js?v=20260814-1"></script>
 </body>
 </html>

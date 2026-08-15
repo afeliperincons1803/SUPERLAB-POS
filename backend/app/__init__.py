@@ -88,6 +88,9 @@ class Product(Base):
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     customizable: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    send_to_command: Mapped[bool] = mapped_column(Boolean, default=False)
+    prep_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    batch_capacity: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     category: Mapped[Category] = relationship()
@@ -152,6 +155,11 @@ class Order(Base):
     total: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     received: Mapped[Decimal | None] = mapped_column(Numeric(12, 0))
     notes: Mapped[str] = mapped_column(Text, default="")
+    own_prep_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_wait_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    estimated_ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invoice_printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    command_printed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     cashier: Mapped[User] = relationship()
     items: Mapped[list["OrderItem"]] = relationship(cascade="all, delete-orphan")
@@ -169,6 +177,9 @@ class OrderItem(Base):
     discount: Mapped[Decimal] = mapped_column(Numeric(12, 0), default=0)
     toppings: Mapped[str] = mapped_column(Text, default="")
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 0))
+    send_to_command: Mapped[bool] = mapped_column(Boolean, default=False)
+    prep_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    batch_capacity: Mapped[int] = mapped_column(Integer, default=1)
 
 
 PRICED_MODIFIERS = {
@@ -415,6 +426,9 @@ def create_app(test_config=None):
             available=bool(data.get("available", True)),
             customizable=bool(data.get("customizable", False)),
             sort_order=(db.scalar(select(func.max(Product.sort_order))) or 0) + 10,
+            send_to_command=bool(data.get("send_to_command", False)),
+            prep_minutes=int(data.get("prep_minutes", 0) or 0),
+            batch_capacity=int(data.get("batch_capacity", 1) or 1),
         )
         db.add(product)
         try:
@@ -465,6 +479,9 @@ def create_app(test_config=None):
         product.sku = str(data.get("sku") or "").strip() or None
         product.available = bool(data.get("available", True))
         product.customizable = bool(data.get("customizable", False))
+        product.send_to_command = bool(data.get("send_to_command", False))
+        product.prep_minutes = int(data.get("prep_minutes", 0) or 0)
+        product.batch_capacity = int(data.get("batch_capacity", 1) or 1)
         try:
             db.commit()
         except IntegrityError:
@@ -639,6 +656,9 @@ def create_app(test_config=None):
                 unit_price=unit_price, discount_percent=item_discount_percent,
                 discount=item_discount, subtotal=line_total,
                 toppings=", ".join(labels),
+                send_to_command=product.send_to_command,
+                prep_minutes=product.prep_minutes if product.send_to_command else 0,
+                batch_capacity=product.batch_capacity if product.send_to_command else 1,
             ))
         try:
             discount_percent = parse_percent(data.get("discount_percent", 0))
@@ -660,15 +680,18 @@ def create_app(test_config=None):
             return jsonify(error=str(exc)), 400
         if status == "paid" and payment == "cash" and (received is None or received < total):
             return jsonify(error="El efectivo recibido no puede ser menor al total"), 400
+        own_prep_minutes, estimated_wait_minutes, estimated_ready_at = estimate_preparation(db, items, status == "paid")
         count = db.scalar(select(func.count(Order.id))) or 0
         order = Order(
             number=f"SL-{datetime.now():%y%m%d}-{count + 1:04d}",
             cashier_id=user.id, cash_session_id=cash.id, status=status,
-            preparation_status="queued" if status == "paid" else "held",
+            preparation_status="queued" if status == "paid" and own_prep_minutes else "completed" if status == "paid" else "held",
             source="pos", customer_name=customer_name,
             payment_method=payment, cash_amount=cash_amount, qr_amount=qr_amount, card_amount=card_amount,
             subtotal=subtotal, discount=discount, discount_percent=discount_percent, total=total,
             received=received, notes=str(data.get("notes", "")).strip(),
+            own_prep_minutes=own_prep_minutes, estimated_wait_minutes=estimated_wait_minutes,
+            estimated_ready_at=estimated_ready_at,
             items=items,
         )
         db.add(order)
@@ -711,15 +734,19 @@ def create_app(test_config=None):
                 product_id=product.id, product_name=product.name, quantity=quantity,
                 unit_price=unit_price, discount_percent=0, discount=0,
                 subtotal=line_total, toppings=", ".join(labels),
+                send_to_command=product.send_to_command,
+                prep_minutes=product.prep_minutes if product.send_to_command else 0,
+                batch_capacity=product.batch_capacity if product.send_to_command else 1,
             ))
         count = db.scalar(select(func.count(Order.id))) or 0
         order = Order(
             number=f"SL-{datetime.now():%y%m%d}-{count + 1:04d}",
             cashier_id=user.id, cash_session_id=cash.id, status="queued",
-            preparation_status="queued", source="tablet", customer_name=customer_name,
+            preparation_status="held", source="tablet", customer_name=customer_name,
             payment_method="pending", cash_amount=0, qr_amount=0, card_amount=0,
             subtotal=subtotal, discount=0, discount_percent=0, total=subtotal, received=None,
-            notes=str(data.get("notes", "")).strip(), items=items,
+            notes=str(data.get("notes", "")).strip(), own_prep_minutes=0,
+            estimated_wait_minutes=0, estimated_ready_at=None, items=items,
         )
         db.add(order)
         db.commit()
@@ -748,8 +775,33 @@ def create_app(test_config=None):
             return jsonify(error="Tipo de impresión no válido"), 400
         if ticket_type == "invoice" and order.status != "paid":
             return jsonify(error="Solo los pedidos pagados tienen factura"), 409
+        if ticket_type == "command" and not command_items(order):
+            return jsonify(error="Este pedido no necesita comandera"), 409
         payload = build_escpos_ticket(order, ticket_type)
         return jsonify(escpos_base64=base64.b64encode(payload).decode("ascii"), ticket_type=ticket_type)
+
+    @app.put("/api/orders/<int:order_id>/print-status")
+    @auth_required()
+    def update_print_status(db, user, order_id):
+        if user.role == "tablet":
+            return jsonify(error="Acceso no permitido"), 403
+        order = db.get(Order, order_id)
+        if not order or (user.role != "superadmin" and order.cashier_id != user.id and order.source != "tablet"):
+            return jsonify(error="Pedido no encontrado"), 404
+        ticket_type = str((request.get_json(silent=True) or {}).get("ticket_type", ""))
+        printed_at = datetime.now(timezone.utc)
+        if ticket_type == "invoice":
+            if order.status != "paid":
+                return jsonify(error="Solo los pedidos pagados tienen factura"), 409
+            order.invoice_printed_at = printed_at
+        elif ticket_type == "command":
+            if not command_items(order):
+                return jsonify(error="Este pedido no necesita comandera"), 409
+            order.command_printed_at = printed_at
+        else:
+            return jsonify(error="Tipo de impresión no válido"), 400
+        db.commit()
+        return jsonify(order=serialize_order(order))
 
     @app.put("/api/orders/<int:order_id>/status")
     @auth_required()
@@ -761,7 +813,7 @@ def create_app(test_config=None):
             return jsonify(error="Comanda no encontrada"), 404
         target = str((request.get_json(silent=True) or {}).get("status", ""))
         transitions = {
-            "queued": {"preparing"},
+            "queued": {"ready"},
             "preparing": {"ready"},
             "ready": {"completed"},
             "completed": set(),
@@ -1149,6 +1201,7 @@ def seed(db):
         if not product:
             product = Product(sku=code)
             db.add(product)
+            existing_products[code] = product
         if is_new or apply_catalog:
             product.category_id = existing_categories[category_name].id
             product.name = name
@@ -1160,6 +1213,38 @@ def seed(db):
             product.customizable = customizable
             product.deleted_at = None
             product.sort_order = position * 10
+    preparation_specs = {
+        "004": (5, 3),
+        "006": (6, 3),
+        "007": (6, 3),
+        "008": (5, 3),
+        "012": (10, 2),
+        "013": (10, 2),
+        "014": (10, 2),
+        "015": (8, 2),
+        "016": (8, 2),
+        "019": (6, 3),
+        "020": (3, 3),
+        "021": (3, 3),
+        "022": (3, 3),
+    }
+    preparation_version = "2026-08-command-rules-v1"
+    preparation_setting = db.get(AppSetting, "preparation_rules_version")
+    apply_preparation = not preparation_setting or preparation_setting.value != preparation_version
+    if apply_preparation:
+        for code, product in existing_products.items():
+            minutes, capacity = preparation_specs.get(code, (0, 1))
+            product.send_to_command = code in preparation_specs
+            product.prep_minutes = minutes
+            product.batch_capacity = capacity
+        if not preparation_setting:
+            preparation_setting = AppSetting(key="preparation_rules_version")
+            db.add(preparation_setting)
+        preparation_setting.value = preparation_version
+    legacy_minidonas = existing_products.get("016")
+    if legacy_minidonas and legacy_minidonas.name == "Mini Donas x15":
+        legacy_minidonas.name = "Mini Donas x14"
+        legacy_minidonas.description = "Catorce mini donas crujientes, dulces y preparadas para compartir."
     if not version_setting:
         version_setting = AppSetting(key="catalog_version")
         db.add(version_setting)
@@ -1272,8 +1357,16 @@ def validate_product(data):
             return "Selecciona una categoría"
         parse_optional_money(data.get("price"))
         validate_image(data.get("image_url"))
+        prep_minutes = int(data.get("prep_minutes", 0) or 0)
+        batch_capacity = int(data.get("batch_capacity", 1) or 1)
     except (TypeError, ValueError):
         return "Categoría o precio inválido"
+    if prep_minutes < 0 or prep_minutes > 180:
+        return "El tiempo de preparación debe estar entre 0 y 180 minutos"
+    if batch_capacity < 1 or batch_capacity > 100:
+        return "La capacidad de tanda debe estar entre 1 y 100"
+    if bool(data.get("send_to_command", False)) and prep_minutes < 1:
+        return "Los productos de comandera necesitan al menos un minuto de preparación"
     code = str(data.get("sku") or "").strip()
     if code and (not code.isdigit() or len(code) > 18):
         return "El código debe contener únicamente números"
@@ -1289,14 +1382,58 @@ def serialize_category(x):
 
 
 def serialize_product(x):
-    return {"id": x.id, "name": x.name, "description": x.description, "image_url": x.image_url, "price": money(x.price), "sku": x.sku, "available": x.available, "customizable": x.customizable, "sort_order": x.sort_order, "category_id": x.category_id, "category": x.category.name if x.category else "", "created_at": bogota_iso(x.created_at)}
+    return {"id": x.id, "name": x.name, "description": x.description, "image_url": x.image_url, "price": money(x.price), "sku": x.sku, "available": x.available, "customizable": x.customizable, "sort_order": x.sort_order, "send_to_command": x.send_to_command, "prep_minutes": x.prep_minutes, "batch_capacity": x.batch_capacity, "category_id": x.category_id, "category": x.category.name if x.category else "", "created_at": bogota_iso(x.created_at)}
 
 
 def serialize_topping(x):
     return {"id": x.id, "name": x.name, "group": x.group_name, "price": money(x.price), "available": x.available}
 
 
+def command_items(order):
+    return [item for item in order.items if item.send_to_command]
+
+
+def estimate_preparation(db, items, is_paid):
+    preparation_items = [item for item in items if item.send_to_command]
+    if not is_paid or not preparation_items:
+        return 0, 0, None
+    own_minutes = sum(
+        ((item.quantity + max(1, item.batch_capacity) - 1) // max(1, item.batch_capacity)) * max(0, item.prep_minutes)
+        for item in preparation_items
+    )
+    now = datetime.now(timezone.utc)
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext('superlab_preparation_queue'))"))
+    pending = db.scalars(select(Order).where(
+        Order.status == "paid",
+        Order.preparation_status.in_(("queued", "preparing")),
+    )).all()
+    ready_times = []
+    legacy_minutes = 0
+    for order in pending:
+        if order.estimated_ready_at:
+            ready_at = order.estimated_ready_at
+            if ready_at.tzinfo is None:
+                ready_at = ready_at.replace(tzinfo=timezone.utc)
+            ready_times.append(ready_at)
+        else:
+            legacy_minutes += max(0, order.own_prep_minutes or 0)
+    queue_available_at = max([now, *ready_times]) + timedelta(minutes=legacy_minutes)
+    total_pending = len(pending) + 1
+    congestion_minutes = 0 if total_pending < 4 else (1 + (total_pending - 4) // 3) * 5
+    estimated_ready_at = queue_available_at + timedelta(minutes=own_minutes + congestion_minutes)
+    raw_wait = max(1, int((estimated_ready_at - now).total_seconds() + 59) // 60)
+    estimated_wait_minutes = ((raw_wait + 4) // 5) * 5
+    return own_minutes, estimated_wait_minutes, estimated_ready_at
+
+
 def serialize_order(x):
+    items = [{"name": i.product_name, "quantity": i.quantity, "unit_price": money(i.unit_price),
+              "discount_percent": float(i.discount_percent or 0), "discount": money(i.discount),
+              "subtotal": money(i.subtotal), "toppings": i.toppings,
+              "send_to_command": i.send_to_command, "prep_minutes": i.prep_minutes,
+              "batch_capacity": i.batch_capacity} for i in x.items]
+    command_only = [item for item in items if item["send_to_command"]]
     return {
         "id": x.id, "number": x.number, "cashier": x.cashier.name, "status": x.status,
         "preparation_status": x.preparation_status, "source": x.source, "customer_name": x.customer_name,
@@ -1304,9 +1441,11 @@ def serialize_order(x):
         "card_amount": money(x.card_amount), "subtotal": money(x.subtotal), "discount": money(x.discount),
         "discount_percent": float(x.discount_percent or 0),
         "total": money(x.total), "received": money(x.received), "notes": x.notes, "created_at": bogota_iso(x.created_at),
-        "items": [{"name": i.product_name, "quantity": i.quantity, "unit_price": money(i.unit_price),
-                   "discount_percent": float(i.discount_percent or 0), "discount": money(i.discount),
-                   "subtotal": money(i.subtotal), "toppings": i.toppings} for i in x.items],
+        "own_prep_minutes": x.own_prep_minutes, "estimated_wait_minutes": x.estimated_wait_minutes,
+        "estimated_ready_at": bogota_iso(x.estimated_ready_at) if x.estimated_ready_at else None,
+        "invoice_printed_at": bogota_iso(x.invoice_printed_at) if x.invoice_printed_at else None,
+        "command_printed_at": bogota_iso(x.command_printed_at) if x.command_printed_at else None,
+        "has_command": bool(command_only), "items": items, "command_items": command_only,
     }
 
 
@@ -1348,7 +1487,11 @@ def build_escpos_ticket(order, ticket_type):
 
     if ticket_type == "command":
         center(); bold(); raw("POR HACER"); size(0x11); raw(order.customer_name or "SIN NOMBRE"); size(); bold(False); center(False); divider("=")
-        for item in order.items:
+        raw(f"Tiempo estimado: {order.estimated_wait_minutes} min")
+        if order.estimated_ready_at:
+            raw(f"Entrega aprox: {as_bogota(order.estimated_ready_at):%H:%M}")
+        divider()
+        for item in command_items(order):
             bold(); raw(f"{item.quantity} x {item.product_name}"); bold(False)
             if item.toppings:
                 for line in wrap_ticket_text(item.toppings, width):
@@ -1485,6 +1628,12 @@ def upgrade_schema(engine):
         statements.append("ALTER TABLE products ADD COLUMN deleted_at TIMESTAMP")
     if "sort_order" not in columns:
         statements.append("ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+    if "send_to_command" not in columns:
+        statements.append("ALTER TABLE products ADD COLUMN send_to_command BOOLEAN NOT NULL DEFAULT FALSE")
+    if "prep_minutes" not in columns:
+        statements.append("ALTER TABLE products ADD COLUMN prep_minutes INTEGER NOT NULL DEFAULT 0")
+    if "batch_capacity" not in columns:
+        statements.append("ALTER TABLE products ADD COLUMN batch_capacity INTEGER NOT NULL DEFAULT 1")
     for name in ("cash_amount", "qr_amount", "card_amount"):
         if name not in order_columns:
             statements.append(f"ALTER TABLE orders ADD COLUMN {name} NUMERIC(12,0) NOT NULL DEFAULT 0")
@@ -1497,12 +1646,34 @@ def upgrade_schema(engine):
         statements.append("ALTER TABLE orders ADD COLUMN customer_name VARCHAR(80) NOT NULL DEFAULT ''")
     if "discount_percent" not in order_columns:
         statements.append("ALTER TABLE orders ADD COLUMN discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0")
+    if "own_prep_minutes" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN own_prep_minutes INTEGER NOT NULL DEFAULT 0")
+    if "estimated_wait_minutes" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN estimated_wait_minutes INTEGER NOT NULL DEFAULT 0")
+    if "estimated_ready_at" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN estimated_ready_at TIMESTAMP")
+    if "invoice_printed_at" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN invoice_printed_at TIMESTAMP")
+    if "command_printed_at" not in order_columns:
+        statements.append("ALTER TABLE orders ADD COLUMN command_printed_at TIMESTAMP")
     item_columns = {column["name"] for column in inspect(engine).get_columns("order_items")}
     if "discount_percent" not in item_columns:
         statements.append("ALTER TABLE order_items ADD COLUMN discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0")
     if "discount" not in item_columns:
         statements.append("ALTER TABLE order_items ADD COLUMN discount NUMERIC(12,0) NOT NULL DEFAULT 0")
+    if "send_to_command" not in item_columns:
+        statements.append("ALTER TABLE order_items ADD COLUMN send_to_command BOOLEAN NOT NULL DEFAULT FALSE")
+    if "prep_minutes" not in item_columns:
+        statements.append("ALTER TABLE order_items ADD COLUMN prep_minutes INTEGER NOT NULL DEFAULT 0")
+    if "batch_capacity" not in item_columns:
+        statements.append("ALTER TABLE order_items ADD COLUMN batch_capacity INTEGER NOT NULL DEFAULT 1")
     if statements:
         with engine.begin() as connection:
             for statement in statements:
                 connection.execute(text(statement))
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_orders_preparation_queue "
+            "ON orders(estimated_ready_at, created_at) "
+            "WHERE status = 'paid' AND preparation_status IN ('queued', 'preparing')"
+        ))

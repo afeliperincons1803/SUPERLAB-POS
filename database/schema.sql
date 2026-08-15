@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS products (
   available BOOLEAN NOT NULL DEFAULT TRUE,
   customizable BOOLEAN NOT NULL DEFAULT FALSE,
   sort_order INTEGER NOT NULL DEFAULT 0,
+  send_to_command BOOLEAN NOT NULL DEFAULT FALSE,
+  prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK (prep_minutes BETWEEN 0 AND 180),
+  batch_capacity INTEGER NOT NULL DEFAULT 1 CHECK (batch_capacity BETWEEN 1 AND 100),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at TIMESTAMPTZ
 );
@@ -67,6 +70,11 @@ CREATE TABLE IF NOT EXISTS orders (
   total NUMERIC(12,0) NOT NULL,
   received NUMERIC(12,0),
   notes TEXT NOT NULL DEFAULT '',
+  own_prep_minutes INTEGER NOT NULL DEFAULT 0,
+  estimated_wait_minutes INTEGER NOT NULL DEFAULT 0,
+  estimated_ready_at TIMESTAMPTZ,
+  invoice_printed_at TIMESTAMPTZ,
+  command_printed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE TABLE IF NOT EXISTS order_items (
@@ -79,8 +87,14 @@ CREATE TABLE IF NOT EXISTS order_items (
   discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
   discount NUMERIC(12,0) NOT NULL DEFAULT 0,
   toppings TEXT NOT NULL DEFAULT '',
-  subtotal NUMERIC(12,0) NOT NULL
+  subtotal NUMERIC(12,0) NOT NULL,
+  send_to_command BOOLEAN NOT NULL DEFAULT FALSE,
+  prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK (prep_minutes BETWEEN 0 AND 180),
+  batch_capacity INTEGER NOT NULL DEFAULT 1 CHECK (batch_capacity BETWEEN 1 AND 100)
 );
 CREATE INDEX IF NOT EXISTS ix_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS ix_orders_cashier_id ON orders(cashier_id);
 CREATE INDEX IF NOT EXISTS ix_products_category_id ON products(category_id);
+CREATE INDEX IF NOT EXISTS ix_orders_preparation_queue
+  ON orders(estimated_ready_at, created_at)
+  WHERE status = 'paid' AND preparation_status IN ('queued', 'preparing');

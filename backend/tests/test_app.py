@@ -1,5 +1,6 @@
 import os
 import tempfile
+import base64
 
 import pytest
 
@@ -61,6 +62,13 @@ def test_login_and_seeded_catalog(client):
     assert by_sku["019"]["price"] == 15000
     assert by_sku["020"]["name"] == "Rosa Tamarindo"
     assert by_sku["020"]["price"] == 10000
+    assert by_sku["020"]["send_to_command"] is True
+    assert by_sku["020"]["prep_minutes"] == 3
+    assert by_sku["020"]["batch_capacity"] == 3
+    assert by_sku["021"]["batch_capacity"] == 3
+    assert by_sku["022"]["batch_capacity"] == 3
+    assert by_sku["001"]["send_to_command"] is False
+    assert by_sku["003"]["send_to_command"] is False
     assert by_sku["023"]["name"] == "Zona Creativa · Pieza pequeña"
     assert by_sku["023"]["price"] == 14000
     assert by_sku["026"]["name"] == "Helados caseros Arazá"
@@ -201,6 +209,9 @@ def test_paid_pos_order_creates_command_and_percentage_discounts(client):
     assert order["customer_name"] == "Camila"
     assert order["status"] == "paid"
     assert order["preparation_status"] == "queued"
+    assert order["has_command"] is True
+    assert order["own_prep_minutes"] == 8
+    assert order["estimated_wait_minutes"] == 10
     assert order["items"][0]["discount"] == 2800
     assert order["items"][0]["subtotal"] == 11200
     assert order["discount"] == 1120
@@ -280,7 +291,7 @@ def test_mocktail_with_liquor_adds_five_thousand(client):
     assert response.get_json()["order"]["total"] == 15000
 
 
-def test_tablet_order_reaches_worker_command_queue(client):
+def test_unpaid_tablet_order_does_not_reach_command_queue(client):
     login(client)
     catalog = client.get("/api/catalog").get_json()
     product = next(product for product in catalog["products"] if product["sku"] == "006")
@@ -300,14 +311,96 @@ def test_tablet_order_reaches_worker_command_queue(client):
     order = response.get_json()["order"]
     assert order["source"] == "tablet"
     assert order["status"] == "queued"
+    assert order["preparation_status"] == "held"
+    assert order["estimated_wait_minutes"] == 0
 
     client.post("/api/auth/logout")
     login(client)
     orders = client.get("/api/orders").get_json()["orders"]
     assert any(row["id"] == order["id"] for row in orders)
-    updated = client.put(f"/api/orders/{order['id']}/status", json={"status": "preparing"})
-    assert updated.status_code == 200
-    assert updated.get_json()["order"]["preparation_status"] == "preparing"
+    updated = client.put(f"/api/orders/{order['id']}/status", json={"status": "ready"})
+    assert updated.status_code == 404
+
+
+def test_mixed_order_command_contains_only_kitchen_items(client):
+    login(client)
+    catalog = client.get("/api/catalog").get_json()["products"]
+    bowl = next(product for product in catalog if product["sku"] == "010")
+    crepe = next(product for product in catalog if product["sku"] == "013")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "paid", "payment_method": "cash", "received": 42000,
+        "customer_name": "Valentina",
+        "items": [
+            {"product_id": bowl["id"], "quantity": 1},
+            {"product_id": crepe["id"], "quantity": 1, "toppings": ["Sin cilantro"]},
+        ],
+    })
+    assert response.status_code == 201
+    order = response.get_json()["order"]
+    assert len(order["items"]) == 2
+    assert [item["name"] for item in order["command_items"]] == ["Crepa de Pollo"]
+    assert order["own_prep_minutes"] == 10
+    raw = base64.b64decode(client.get(f"/api/orders/{order['id']}/escpos?type=command").get_json()["escpos_base64"])
+    ticket = raw.decode("cp850", errors="ignore")
+    assert "Crepa de Pollo" in ticket
+    assert "Bowl Lab" not in ticket
+
+
+def test_immediate_order_is_completed_and_has_no_command(client):
+    login(client)
+    granizado = next(product for product in client.get("/api/catalog").get_json()["products"] if product["sku"] == "001")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    response = client.post("/api/orders", json={
+        "status": "paid", "payment_method": "cash", "received": 13000,
+        "customer_name": "Nicolás", "items": [{"product_id": granizado["id"], "quantity": 1}],
+    })
+    assert response.status_code == 201
+    order = response.get_json()["order"]
+    assert order["preparation_status"] == "completed"
+    assert order["has_command"] is False
+    assert order["estimated_wait_minutes"] == 0
+    assert client.get(f"/api/orders/{order['id']}/escpos?type=command").status_code == 409
+
+
+def test_batch_capacity_and_congestion_margin_from_fourth_order(client):
+    login(client)
+    mocktail = next(product for product in client.get("/api/catalog").get_json()["products"] if product["sku"] == "020")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    waits = []
+    for index in range(4):
+        response = client.post("/api/orders", json={
+            "status": "paid", "payment_method": "cash", "received": 30000,
+            "customer_name": f"Cliente {index + 1}",
+            "items": [{"product_id": mocktail["id"], "quantity": 3}],
+        })
+        assert response.status_code == 201
+        order = response.get_json()["order"]
+        assert order["own_prep_minutes"] == 3
+        waits.append(order["estimated_wait_minutes"])
+    assert waits == [5, 10, 10, 20]
+
+    fourth_batch = client.post("/api/orders", json={
+        "status": "paid", "payment_method": "cash", "received": 40000,
+        "items": [{"product_id": mocktail["id"], "quantity": 4}],
+    }).get_json()["order"]
+    assert fourth_batch["own_prep_minutes"] == 6
+
+
+def test_print_steps_are_recorded(client):
+    login(client)
+    frappe = next(product for product in client.get("/api/catalog").get_json()["products"] if product["sku"] == "006")
+    client.post("/api/cash-session/open", json={"opening_cash": 0})
+    order = client.post("/api/orders", json={
+        "status": "paid", "payment_method": "cash", "received": 13000,
+        "items": [{"product_id": frappe["id"], "quantity": 1}],
+    }).get_json()["order"]
+    invoice = client.put(f"/api/orders/{order['id']}/print-status", json={"ticket_type": "invoice"})
+    assert invoice.status_code == 200
+    assert invoice.get_json()["order"]["invoice_printed_at"]
+    command = client.put(f"/api/orders/{order['id']}/print-status", json={"ticket_type": "command"})
+    assert command.status_code == 200
+    assert command.get_json()["order"]["command_printed_at"]
 
 
 def test_worker_cannot_access_admin(client):
