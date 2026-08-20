@@ -173,10 +173,11 @@ function showQuickCashOpening() {
   openModal(`<p class="eyebrow orange">PASO NECESARIO</p><h2>Abre la caja para cobrar</h2><p class="muted">La caja está cerrada. Registra el efectivo inicial y continuarás automáticamente con el cobro, sin perder el pedido.</p><form id="quick-open-cash" class="form-grid"><label class="full">Base inicial de efectivo<input name="opening_cash" type="number" min="0" value="0" required></label><div class="form-actions"><button type="button" class="button secondary" data-close-modal>Cancelar</button><button class="button primary">Abrir caja y continuar</button></div></form>`);
   $('#quick-open-cash').onsubmit=async e=>{e.preventDefault();const submit=e.currentTarget.querySelector('button[type="submit"],button:not([type])');submit.disabled=true;submit.textContent='Abriendo caja…';try{const {cash_session}=await api('/api/cash-session/open',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.currentTarget)))});state.cash=cash_session;closeModal();toast('Caja abierta');renderCheckout()}catch(error){submit.disabled=false;submit.textContent='Abrir caja y continuar';toast(error.message,'error')}};
 }
+function cartNeedsCommand(){return state.cart.some(x=>state.products.find(p=>p.id===x.product_id)?.send_to_command)}
 function renderCheckout() {
   const {total}=cartTotals();
   const customer=$('#customer-name').value.trim();
-  if(!customer){toast('Escribe el nombre del cliente para poder llamar el pedido','error');$('#customer-name').focus();return}
+  if(cartNeedsCommand()&&!customer){toast('Este pedido lleva preparación: escribe el nombre para poder llamarlo','error');$('#customer-name').focus();return}
   openModal(`<p class="eyebrow orange">FINALIZAR VENTA</p><h2>Cobrar ${fmt(total)}</h2><div class="checkout-ready"><span>✓ Caja abierta</span><small>El pedido solo se registra cuando confirmes el pago.</small></div><p class="muted">Selecciona un método o divide el total entre varios.</p><div class="payment-options four"><button type="button" class="payment-option active" data-payment="cash">💵<br>Efectivo</button><button type="button" class="payment-option" data-payment="qr">▦<br>Consignación QR</button><button type="button" class="payment-option" data-payment="card">💳<br>Tarjeta</button><button type="button" class="payment-option" data-payment="mixed">◒<br>Mixto</button></div><form id="payment-form" class="form-grid"><label class="full" id="received-label">Efectivo recibido<input id="received" type="number" min="${total}" value="${total}" required></label><div class="full cash-change">Cambio: <strong id="change">${fmt(0)}</strong></div><div id="mixed-fields" class="full mixed-fields"><p>Distribuye exactamente ${fmt(total)}</p><div><label>Efectivo<input id="cash-amount" type="number" min="0" value="0"></label><label>Consignación QR<input id="qr-amount" type="number" min="0" value="0"></label><label>Tarjeta<input id="card-amount" type="number" min="0" value="0"></label></div><strong id="mixed-balance">Falta asignar ${fmt(total)}</strong></div><div class="form-actions"><button type="button" class="button secondary" data-close-modal>Cancelar</button><button class="button primary" id="confirm-payment">Confirmar pago</button></div></form>`);
   let payment='cash';
   const updateMixed=()=>{const assigned=Number($('#cash-amount').value||0)+Number($('#qr-amount').value||0)+Number($('#card-amount').value||0),difference=total-assigned;$('#mixed-balance').textContent=difference===0?'Total distribuido correctamente':difference>0?`Falta asignar ${fmt(difference)}`:`Excede el total por ${fmt(Math.abs(difference))}`;$('#mixed-balance').className=difference===0?'ok':'error'};
@@ -199,7 +200,7 @@ async function submitOrder(status,payment='cash',received=null,paymentParts={}) 
 function showReceipt(order,checkoutFlow=false) {
   const parts=[['Efectivo',order.cash_amount],['Consignación QR',order.qr_amount],['Tarjeta',order.card_amount]].filter(x=>Number(x[1])>0);
   const flowActions=checkoutFlow?`<button class="button secondary" id="print-receipt">Impresión del navegador</button><button class="button primary" id="flow-next" ${order.invoice_printed_at?'':'disabled'}>${order.has_command?'Siguiente: comandera':'Siguiente'}</button>`:`${order.has_command?'<button class="button secondary" id="view-command">Ver comandera</button>':''}<button class="button secondary" id="print-receipt">Impresión del navegador</button><button class="button primary" data-close-modal>Cerrar</button>`;
-  openModal(`<div class="print-flow-head"><span>Paso 1 de ${order.has_command?3:2}</span><strong>Imprime la factura y retírala de la impresora</strong></div><div class="thermal-preview"><div class="thermal-ticket receipt" data-ticket="invoice"><div class="receipt-head"><h2>SUPERLAB ✦</h2><div>Mix and Chill</div><small>Sucursal principal · Bogotá UTC−5</small></div><div class="receipt-lines"><div class="receipt-row"><span>Factura / pedido</span><span>${order.number}</span></div><div class="receipt-row"><span>Cliente</span><strong>${escapeHtml(order.customer_name||'Consumidor final')}</strong></div><div class="receipt-row"><span>Fecha y hora</span><span>${dateFmt(order.created_at)}</span></div><div class="receipt-row"><span>Cajero</span><span>${escapeHtml(order.cashier)}</span></div></div><div class="receipt-lines">${order.items.map(x=>`<div class="receipt-row"><span>${x.quantity} × ${escapeHtml(x.name)}</span><span>${fmt(x.subtotal)}</span></div>${Number(x.discount_percent)>0?`<small>Descuento de producto: ${x.discount_percent}% (− ${fmt(x.discount)})</small>`:''}`).join('')}</div><div class="receipt-lines"><div class="receipt-row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>${Number(order.discount)>0?`<div class="receipt-row"><span>Descuento total ${order.discount_percent||0}%</span><span>− ${fmt(order.discount)}</span></div>`:''}<div class="receipt-row receipt-total"><span>TOTAL</span><span>${fmt(order.total)}</span></div><div class="receipt-row"><span>Pago</span><span>${paymentName(order.payment_method)}</span></div>${parts.map(x=>`<div class="receipt-row"><span>${x[0]}</span><span>${fmt(x[1])}</span></div>`).join('')}${order.payment_method==='cash'&&order.received!==null?`<div class="receipt-row"><span>Recibido</span><span>${fmt(order.received)}</span></div><div class="receipt-row"><span>Cambio</span><span>${fmt(Math.max(0,order.received-order.total))}</span></div>`:''}</div><div class="receipt-foot">Conserva esta factura.<br>Te llamaremos como <strong>${escapeHtml(order.customer_name||'cliente')}</strong>.</div></div>${printerPreviewPanel('invoice')}</div><div class="form-actions">${flowActions}</div>`);
+  openModal(`<div class="print-flow-head"><span>Paso 1 de ${order.has_command?3:2}</span><strong>Imprime la factura y retírala de la impresora</strong></div><div class="thermal-preview"><div class="thermal-ticket receipt" data-ticket="invoice"><div class="receipt-head"><h2>SUPERLAB ✦</h2><div>Mix and Chill</div><small>Sucursal principal · Bogotá UTC−5</small></div><div class="receipt-lines"><div class="receipt-row"><span>Factura / pedido</span><span>${order.number}</span></div><div class="receipt-row"><span>Cliente</span><strong>${escapeHtml(order.customer_name||'Consumidor final')}</strong></div><div class="receipt-row"><span>Fecha y hora</span><span>${dateFmt(order.created_at)}</span></div><div class="receipt-row"><span>Cajero</span><span>${escapeHtml(order.cashier)}</span></div></div><div class="receipt-lines">${order.items.map(x=>`<div class="receipt-row"><span>${x.quantity} × ${escapeHtml(x.name)}</span><span>${fmt(x.subtotal)}</span></div>${Number(x.discount_percent)>0?`<small>Descuento de producto: ${x.discount_percent}% (− ${fmt(x.discount)})</small>`:''}`).join('')}</div><div class="receipt-lines"><div class="receipt-row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>${Number(order.discount)>0?`<div class="receipt-row"><span>Descuento total ${order.discount_percent||0}%</span><span>− ${fmt(order.discount)}</span></div>`:''}<div class="receipt-row receipt-total"><span>TOTAL</span><span>${fmt(order.total)}</span></div><div class="receipt-row"><span>Pago</span><span>${paymentName(order.payment_method)}</span></div>${parts.map(x=>`<div class="receipt-row"><span>${x[0]}</span><span>${fmt(x[1])}</span></div>`).join('')}${order.payment_method==='cash'&&order.received!==null?`<div class="receipt-row"><span>Recibido</span><span>${fmt(order.received)}</span></div><div class="receipt-row"><span>Cambio</span><span>${fmt(Math.max(0,order.received-order.total))}</span></div>`:''}</div><div class="receipt-foot">Conserva esta factura.<br>${order.has_command?`Te llamaremos como <strong>${escapeHtml(order.customer_name||'cliente')}</strong>.`:'Tu pedido se entrega de inmediato en la barra. ¡Gracias por tu compra!'}</div></div>${printerPreviewPanel('invoice')}</div><div class="form-actions">${flowActions}</div>`);
   const printed=async()=>{const updated=await recordTicketPrint(order,'invoice');Object.assign(order,updated);if(checkoutFlow)$('#flow-next').disabled=false};
   $('#print-receipt').onclick=async()=>{printThermal('invoice');await printed()};
   $('#view-command')?.addEventListener('click',()=>showCommandTicket(order));
@@ -225,25 +226,108 @@ function showOrderCompletion(order){
   openModal(`<div class="checkout-complete"><span class="checkout-complete-icon">✓</span><p class="eyebrow orange">VENTA FINALIZADA</p><h2>${escapeHtml(order.customer_name||'Cliente')}</h2>${order.has_command?`<p>Tu pedido estará listo aproximadamente en</p><strong>${order.estimated_wait_minutes} minutos</strong>${order.estimated_ready_at?`<small>Hora estimada: ${timeFmt(order.estimated_ready_at)}</small>`:''}`:'<p>Todo el pedido se prepara y entrega directamente en la barra.</p><strong>Entrega inmediata</strong>'}<button class="button primary wide" data-close-modal>Nuevo pedido</button></div>`);
 }
 
-function printerPreviewPanel(kind){return `<aside class="printer-bubble"><div class="printer-bubble-head"><span class="printer-dot checking"></span><div><strong>Impresora térmica 80 mm</strong><small id="printer-status" role="status">Verificando conexión…</small></div></div><label class="printer-select-label">Impresora detectada<select id="printer-select" disabled><option>Buscando…</option></select></label><div class="printer-bubble-actions"><button type="button" class="button secondary" id="check-printer">Revisar conexión</button><button type="button" class="button primary" id="direct-print" disabled>Imprimir ${kind==='invoice'?'factura':'comandera'}</button></div><p class="printer-help">Impresión directa mediante QZ Tray. Si no está disponible, usa la impresión del navegador.</p></aside>`}
-async function verifyPrinterConnection(){
-  const status=$('#printer-status'),dot=$('.printer-dot'),select=$('#printer-select'),direct=$('#direct-print');
-  dot.className='printer-dot checking';status.textContent='Conectando con QZ Tray…';select.disabled=true;direct.disabled=true;
-  try{
-    if(typeof qz==='undefined')throw new Error('QZ Tray no está disponible en este equipo');
-    if(!qz.websocket.isActive())await Promise.race([qz.websocket.connect(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('No responde QZ Tray. Ábrelo en este equipo y vuelve a revisar')),4000))]);
-    status.textContent='Buscando impresoras térmicas…';
-    const found=await Promise.race([qz.printers.find(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('QZ Tray no terminó de buscar las impresoras. Revisa el cable y vuelve a intentar')),4000))]),printers=(Array.isArray(found)?found:[found]).filter(Boolean);
-    if(!printers.length)throw new Error('QZ Tray está conectado, pero no detectó impresoras');
-    const preferred=printers.find(name=>/sat|q22u|posprinter|pos[-\s]?80|thermal|ticket/i.test(name))||printers[0];
-    select.innerHTML=printers.map(name=>`<option ${name===preferred?'selected':''}>${escapeHtml(name)}</option>`).join('');select.disabled=false;direct.disabled=false;
-    dot.className='printer-dot connected';status.textContent=`Conectada · ${preferred}`;return preferred;
-  }catch(error){dot.className='printer-dot disconnected';select.innerHTML='<option>Sin impresora</option>';status.textContent=`Sin conexión · ${error.message||'Abre QZ Tray'}`;return null}
+// El botón de imprimir NUNCA nace deshabilitado: la conexión se resuelve al
+// momento de pulsarlo (ver el manejador de #direct-print). Antes se
+// deshabilitaba según el resultado del chequeo previo y, si ese chequeo
+// fallaba o quedaba con datos viejos, el cajero se quedaba sin poder
+// imprimir y sin explicación.
+function printerPreviewPanel(kind){return `<aside class="printer-bubble"><div class="printer-bubble-head"><span class="printer-dot checking"></span><div><strong>Impresora térmica 80 mm</strong><small id="printer-status" role="status">Verificando conexión…</small></div></div><label class="printer-select-label">Impresora detectada<select id="printer-select" disabled><option>Buscando…</option></select></label><div class="printer-bubble-actions"><button type="button" class="button secondary" id="check-printer">Revisar conexión</button><button type="button" class="button primary" id="direct-print">Imprimir ${kind==='invoice'?'factura':'comandera'}</button></div><p class="printer-help">Impresión directa mediante QZ Tray. Si no está disponible, usa la impresión del navegador.</p></aside>`}
+
+// Nombre de la última impresora vista. Sirve para preseleccionarla, pero
+// NUNCA como prueba de que siga conectada: el socket con QZ Tray se cae al
+// cerrar el modal, al dormirse el equipo o al reiniciarse QZ Tray, y un
+// caché usado como "está conectada" termina mintiendo en pantalla.
+let lastDetectedPrinter=null;
+function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms))}
+
+// Toda escritura de estado pasa por aquí. Si el modal ya se cerró (o se
+// abrió otro distinto), los nodos quedan huérfanos y se descarta la
+// escritura en vez de pintar sobre un DOM que ya nadie ve.
+function paintPrinter(state,message,options={}){
+  const status=$('#printer-status'),dot=$('.printer-dot'),select=$('#printer-select');
+  if(!status||!dot||!select)return;
+  dot.className=`printer-dot ${state}`;
+  status.textContent=message;
+  if(options.printers)select.innerHTML=options.printers.map(name=>`<option ${name===options.selected?'selected':''}>${escapeHtml(name)}</option>`).join('');
+  if(options.empty)select.innerHTML='<option>Sin impresora</option>';
+  select.disabled=state!=='connected';
 }
+
+// Enlace vivo con QZ Tray. Se llama también justo antes de imprimir, así
+// que si el socket se cayó se vuelve a levantar en ese instante.
+async function ensureQzConnected(){
+  if(typeof qz==='undefined')throw new Error('QZ Tray no está instalado o no cargó en este equipo');
+  if(qz.websocket.isActive())return;
+  await Promise.race([
+    qz.websocket.connect(),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('No responde QZ Tray. Ábrelo en este equipo — si aparece una ventana pidiendo permiso, acéptala')),6000)),
+  ]);
+}
+
+async function findPrinters(){
+  await ensureQzConnected();
+  const found=await Promise.race([
+    qz.printers.find(),
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error('QZ Tray no terminó de buscar las impresoras. Revisa que esté encendida, con papel y el cable bien puesto')),9000)),
+  ]);
+  const printers=(Array.isArray(found)?found:[found]).filter(Boolean);
+  if(!printers.length)throw new Error('QZ Tray está conectado, pero no detectó impresoras');
+  return printers;
+}
+
+// Siempre consulta de verdad (nunca desde caché) y reintenta un par de
+// veces: la primera búsqueda tras un rato inactiva a veces no responde a
+// tiempo, pero la segunda o tercera sí.
+async function verifyPrinterConnection(attempt=1){
+  const maxAttempts=3;
+  paintPrinter('checking',attempt>1?`Reintentando conexión (${attempt}/${maxAttempts})…`:'Conectando con QZ Tray…');
+  try{
+    const printers=await findPrinters();
+    const preferred=printers.find(name=>/sat|q22u|posprinter|pos[-\s]?80|thermal|ticket/i.test(name))||printers[0];
+    lastDetectedPrinter=preferred;
+    paintPrinter('connected',`Conectada · ${preferred}`,{printers,selected:preferred});
+    return preferred;
+  }catch(error){
+    if(attempt<maxAttempts){await sleep(600);return verifyPrinterConnection(attempt+1)}
+    lastDetectedPrinter=null;
+    paintPrinter('disconnected',`Sin conexión · ${error.message||'Abre QZ Tray'}`,{empty:true});
+    return null;
+  }
+}
+
 function setupPrinterPreview(order,kind,onPrinted=()=>{}){
-  $('#check-printer').onclick=verifyPrinterConnection;
-  $('#printer-select').onchange=e=>{$('#printer-status').textContent=`Conectada · ${e.target.value}`};
-  $('#direct-print').onclick=async()=>{const button=$('#direct-print'),status=$('#printer-status'),printer=$('#printer-select').value;if(!printer||printer==='Sin impresora')return verifyPrinterConnection();button.disabled=true;button.textContent='Enviando…';try{status.textContent='Generando ticket ESC/POS…';const ticket=await api(`/api/orders/${order.id}/escpos?type=${kind}`);status.textContent=`Enviando a ${printer}…`;await qz.print(qz.configs.create(printer),[{type:'raw',format:'base64',data:ticket.escpos_base64}]);await onPrinted();$('.printer-dot').className='printer-dot connected';status.textContent=`Impresión enviada · ${printer}`;toast('Ticket enviado a la impresora')}catch(error){$('.printer-dot').className='printer-dot disconnected';status.textContent=`No se pudo imprimir · ${error.message}`;toast(error.message,'error')}finally{button.disabled=false;button.textContent=`Imprimir ${kind==='invoice'?'factura':'comandera'}`}};
+  const label=`Imprimir ${kind==='invoice'?'factura':'comandera'}`;
+  $('#check-printer').onclick=()=>verifyPrinterConnection();
+  $('#printer-select').onchange=e=>{lastDetectedPrinter=e.target.value;paintPrinter('connected',`Conectada · ${e.target.value}`)};
+  $('#direct-print').onclick=async()=>{
+    const button=$('#direct-print');
+    button.disabled=true;button.textContent='Enviando…';
+    try{
+      // Se reconecta y se resuelve la impresora en el momento del clic: así
+      // el botón funciona aunque el chequeo previo haya fallado o el enlace
+      // con QZ Tray se haya caído mientras el modal estaba abierto.
+      paintPrinter('checking','Conectando con la impresora…');
+      await ensureQzConnected();
+      const chosen=$('#printer-select')?.value;
+      let printer=(chosen&&chosen!=='Sin impresora'&&chosen!=='Buscando…')?chosen:(lastDetectedPrinter||await verifyPrinterConnection());
+      if(!printer)throw new Error('No se encontró ninguna impresora conectada');
+      paintPrinter('checking','Generando ticket ESC/POS…');
+      const ticket=await api(`/api/orders/${order.id}/escpos?type=${kind}`);
+      paintPrinter('checking',`Enviando a ${printer}…`);
+      await qz.print(qz.configs.create(printer),[{type:'raw',format:'base64',data:ticket.escpos_base64}]);
+      await onPrinted();
+      lastDetectedPrinter=printer;
+      paintPrinter('connected',`Impresión enviada · ${printer}`);
+      toast('Ticket enviado a la impresora');
+    }catch(error){
+      lastDetectedPrinter=null;
+      paintPrinter('disconnected',`No se pudo imprimir · ${error.message}`);
+      toast(error.message,'error');
+    }finally{
+      const current=$('#direct-print');
+      if(current){current.disabled=false;current.textContent=label}
+    }
+  };
   setTimeout(verifyPrinterConnection,50);
 }
 

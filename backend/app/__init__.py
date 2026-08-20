@@ -1486,7 +1486,16 @@ def build_escpos_ticket(order, ticket_type):
     divider()
 
     if ticket_type == "command":
-        center(); bold(); raw("POR HACER"); size(0x11); raw(order.customer_name or "SIN NOMBRE"); size(); bold(False); center(False); divider("=")
+        center(); bold(); raw("POR HACER"); raw("LLAMAR A")
+        # 0x11 = doble ancho y doble alto: a ese tamaño el cabezal de una
+        # térmica de 80 mm real solo imprime ~21 caracteres (42 a tamaño
+        # normal). Sin envolver el texto, un nombre largo queda cortado a
+        # mitad de línea en la impresora física en vez de pasar a una
+        # segunda línea.
+        size(0x11)
+        for line in wrap_ticket_text(order.customer_name or "SIN NOMBRE", width // 2):
+            raw(line)
+        size(); bold(False); center(False); divider("=")
         raw(f"Tiempo estimado: {order.estimated_wait_minutes} min")
         if order.estimated_ready_at:
             raw(f"Entrega aprox: {as_bogota(order.estimated_ready_at):%H:%M}")
@@ -1502,6 +1511,7 @@ def build_escpos_ticket(order, ticket_type):
             for line in wrap_ticket_text(order.notes, width):
                 raw(line)
         center(); raw("Marcar como lista en el POS")
+        feed_before_cut(raw)
     else:
         raw(f"Cliente: {order.customer_name or 'Consumidor final'}")
         divider()
@@ -1521,16 +1531,40 @@ def build_escpos_ticket(order, ticket_type):
             two_columns("Descuentos productos", f"-{money(line_discounts):,}".replace(",", "."))
         if order.discount:
             two_columns(f"Descuento total {order.discount_percent}%", f"-{money(order.discount):,}".replace(",", "."))
-        bold(); size(0x01); two_columns("TOTAL", f"$ {money(order.total):,}".replace(",", ".")); size(); bold(False); divider()
+        # OJO: aquí antes se usaba size(0x01) (doble ANCHO) para resaltar el
+        # total, pero two_columns() seguía calculando las columnas para 42
+        # caracteres normales. 0x01 duplica el ancho de cada carácter, así
+        # que en una impresora física de 80 mm esa línea no cabe: el
+        # cabezal solo imprime ~21 caracteres a doble ancho y el resto de
+        # la línea (el precio) queda cortado — justo lo que pasó con la
+        # factura de la Crepa de Res. Se cambia a 0x10 (doble ALTO, ancho
+        # normal): se ve igual de grande, pero nunca se corta.
+        bold(); size(0x10); two_columns("TOTAL", f"$ {money(order.total):,}".replace(",", ".")); size(); bold(False); divider()
         two_columns("Pago", payment_label(order.payment_method))
         if order.received is not None and order.payment_method == "cash":
             two_columns("Recibido", f"$ {money(order.received):,}".replace(",", "."))
             two_columns("Cambio", f"$ {money(max(Decimal(0), Decimal(order.received)-Decimal(order.total))):,}".replace(",", "."))
         center(); raw(""); raw("Gracias por experimentar con Superlab")
-        raw(f"Te llamaremos como {order.customer_name or 'cliente'}")
-    raw(""); raw(""); raw("")
+        if command_items(order):
+            raw(f"Te llamaremos como {order.customer_name or 'cliente'}")
+        else:
+            raw("Tu pedido se entrega de inmediato en la barra")
+        feed_before_cut(raw)
     chunks.append(b"\x1dV\x00")
     return b"".join(chunks)
+
+
+def feed_before_cut(raw):
+    """Espacio en blanco antes del corte.
+
+    Probado en la impresora física (POSPrinter POS-80C ya conectada): con
+    solo un par de líneas en blanco, la cuchilla/el punto de corte quedaba
+    encima del texto final y el arranque del siguiente ticket salía pegado
+    al anterior. 6 líneas dejan margen de sobra para que el corte caiga en
+    blanco.
+    """
+    for _ in range(6):
+        raw("")
 
 
 def wrap_ticket_text(value, width=42):
